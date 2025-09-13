@@ -1,0 +1,42 @@
+DIM: 3
+DIM_OF_WORLD: 3
+number of vertices: 8
+number of elements: 5
+
+vertex coordinates:
+ 0 0 0
+ 1 0 0
+ 0 0 1
+ 1 0 1
+ 1 1 0
+ 1 1 1
+ 0 1 0
+ 0 1 1
+
+element vertices:
+ 5 6 2 7
+ 5 1 2 3
+ 1 6 2 0
+ 1 6 5 4
+ 1 6 5 2
+
+element boundaries:
+ 1 1 1 0
+ 1 1 1 0
+ 1 1 1 0
+ 1 1 1 0
+ 0 0 0 0
+
+element type:
+ 1
+ 1
+ 1
+ 1
+ 1
+
+element neighbours:
+ -1 -1 -1 4
+ -1 -1 -1 4
+ -1 -1 -1 4
+ -1 -1 -1 4
+ 0 1 2 3

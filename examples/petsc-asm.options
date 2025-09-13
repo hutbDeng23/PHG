@@ -1,0 +1,18 @@
+# Options for using PETSc's ASM preconditioner with MUMPS as the sub solver.
+# $Id: petsc-asm.options,v 1.8 2021/07/02 01:50:00 zlb Exp $
+-solver petsc
+-oem_options {
+    -ksp_type gmres
+    -pc_type asm
+# PC ASM options
+    -pc_asm_overlap	4		# default is 1
+    -pc_asm_type	restrict	# basic, restrict, interpolate, none
+    #-pc_asm_blocks	-1		# nbr of subdomains
+    #-pc_asm_truelocal	?		#
+    -sub_ksp_type preonly -sub_pc_type lu
+###    -sub_pc_factor_mat_solver_package mumps
+    -sub_pc_factor_mat_solver_type mumps
+# MUMPS options
+    -mat_mumps_sym	1		# 0, 1, 2: unsym, spd, sym
+    -mat_mumps_icntl_4	0		# 0, 1, 2, 3, 4: print_level
+}

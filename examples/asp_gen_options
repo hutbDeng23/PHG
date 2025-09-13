@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# Auxiliary script for p-MG preconditioner using the ASP solver.
+#
+# $Id: asp_gen_options,v 1.1 2019/05/07 03:08:23 zlb Exp $
+
+recursion () {
+    local ident0 order0
+    ident="${ident}  "
+    if test "$order" -ge 1; then
+	echo "${ident}-solver asp -asp_dof_type $pre$order"
+	echo "${ident}-asp_smoother_opts {-solver smoother}"
+	echo "${ident}-asp_aux_solver_opts {"
+	order0="$order"
+	ident0="$ident"
+	order=$((order - step))
+	recursion
+	order="$order0"
+	ident="$ident0"
+	echo -n "}"
+    else
+	echo "${ident}-solver hypre"
+	echo -n "${ident}-hypre_solver boomeramg"
+    fi
+    return
+}
+
+order="0"
+pre="P"
+step="1"
+if test $# -eq 3; then
+    order="$1"
+    pre="$2"
+    step="$3"
+elif test $# -eq 2; then
+    order="$1"
+    pre="$2"
+elif test $# -eq 1; then
+    order="$1"
+fi
+
+if ! test "$step" -ge 1; then step=1; fi >/dev/null 2>&1
+order=$((order+0)) >/dev/null 2>&1
+
+if test $# -gt 3 -o $# -lt 1 \
+	|| ! test "$order" -gt 0 -a "$order" -le 16 \
+	#|| test "$pre" != "P" -a "$pre" != "HB" -a "$pre" != "TST"
+then
+    echo 1>&2 "Error: invalid cmdline argument"
+    echo 1>&2 "Usage: $0 order [prefix [step]]"
+    echo 1>&2 "Examples:"
+    echo 1>&2 "    $0 8"
+    echo 1>&2 "    $0 8 HB"
+    echo 1>&2 "    $0 8 HB 4"
+    exit 1
+fi
+
+cat 1>&2 <<END
+#################################################################
+# Running `basename $0` with order=$order, prefix=$pre, step=$step	#
+#################################################################
+END
+
+# head
+#-asp_smoother_opts {-solver smoother -smoother_type GS}
+#-asp_smoother_opts {-solver hypre -hypre_solver pcg -hypre_pc euclid}
+#-asp_cycle_type 010
+cat <<END
+-solver gmres -gmres_pc_type solver
+-gmres_pc_opts {
+END
+
+order=$((order - step))
+ident=""
+recursion
+
+# tail
+echo "}"

@@ -1,0 +1,16 @@
+# Options for using PHG's ASM preconditioner with MUMPS as the sub solver.
+# $Id: petsc-asm-FGMRES.options,v 1.1 2019/05/07 03:08:23 zlb Exp $
+-solver petsc
+-oem_options "-ksp_type fgmres"
+-petsc_pc_opts {
+    -solver asm
+    -asm_sub_solver_opts {
+	-solver mumps			# any solver (recomm. MUMPS or PARDISO)
+	-mumps_symmetry sym		# spd, sym, unsym
+	-mumps_precision single		# double, single
+    }
+    -asm_restriction global		# local, global
+    -asm_prolongation local		# local, global
+    -asm_overlap 4
+    -verbosity 0			# verbosity of the ASM solver
+}

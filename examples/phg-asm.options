@@ -1,0 +1,5 @@
+# Options for using PHG's ASM preconditioner with MUMPS as the sub solver.
+# $Id: phg-asm.options,v 1.14 2021/07/07 05:47:07 zlb Exp $
+-solver gmres
+-gmres_pc_type solver -gmres_pc_opts { -options_file phg-asm.suboptions }
+-oem_options="-ksp_type preonly -pc_type ilu -ksp_initial_guess_nonzero 0"
