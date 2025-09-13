@@ -1,0 +1,226 @@
+##----------------------------------------------------------------------##
+
+{
+   s1
+   Memcheck:Leak
+   fun:_vgrZU_libcZdsoZa_malloc
+   fun:fmalloc__
+   fun:CheckInputs__
+   fun:ParMETIS_V3_PartKway
+   fun:phgRedistributeGrid
+   fun:phgBalanceGrid
+   fun:main
+}
+
+{
+   s2
+   Memcheck:Cond
+   fun:phgMemcmp
+   fun:phgUpdateBoundaryTypes
+   fun:phgRedistributeGrid
+   fun:phgBalanceGrid
+   fun:main
+}
+
+{
+   s3
+   Memcheck:Cond
+   fun:phgUpdateBoundaryTypes
+   fun:phgRedistributeGrid
+   fun:phgBalanceGrid
+   fun:main
+}
+
+{
+   s4
+   Memcheck:Leak
+   fun:_vgrZU_libcZdsoZa_malloc
+   fun:__nss_lookup_function
+   fun:__nss_lookup
+   fun:__nss_passwd_lookup
+   fun:getpwuid_r@@GLIBC_2.1.2
+   fun:getpwuid
+   fun:PetscGetUserName
+   fun:PetscErrorPrintfInitialize
+   fun:PetscInitialize
+   fun:SlepcInitialize
+   fun:Initialize
+   fun:phgSolverInitialize
+}
+
+{
+   s5
+   Memcheck:Leak
+   fun:_vgrZU_libcZdsoZa_malloc
+   fun:MPIDI_CH3U_Init_sshm
+   fun:MPIDI_CH3_Init
+   fun:MPID_Init
+   fun:MPIR_Init_thread
+   fun:PMPI_Init
+   fun:phgInitMPI
+   fun:phgInit
+   fun:main
+}
+
+{  
+   s6
+   Memcheck:Leak
+   fun:_vgrZU_libcZdsoZa_malloc
+   fun:MPIDI_CH3I_BootstrapQ_create_named
+   fun:MPIDI_CH3U_Init_sshm
+   fun:MPIDI_CH3_Init
+   fun:MPID_Init
+   fun:MPIR_Init_thread
+   fun:PMPI_Init
+   fun:phgInitMPI
+   fun:phgInit
+   fun:main  
+}
+
+{
+   s6a
+   Memcheck:Leak
+   fun:malloc
+   fun:_linux_get_cpu_info
+   obj:*
+}
+
+{
+   s8
+   Memcheck:Leak
+   fun:malloc
+   fun:_papi_*
+   fun:*
+   fun:*
+   obj:*
+}
+
+{
+   s8a
+   Memcheck:Leak
+   fun:malloc
+   fun:_papi_*
+   fun:*
+   fun:*
+   fun:*
+   obj:*
+}
+
+{
+   s8b
+   Memcheck:Leak
+   fun:calloc
+   fun:_linux_update_shlib_info
+   fun:_linux_get_system_info
+   obj:/usr/lib/libpapi.so.4.1.3.0
+   fun:_papi_hwi_init_global
+   fun:PAPI_library_init
+   fun:phgPerfInit
+   obj:*
+}
+
+{
+   s9
+   Memcheck:Leak
+   fun:malloc
+   fun:___kmp_allocate
+   fun:__kmpc_critical
+   fun:GOMP_critical_name_start
+   fun:*
+   fun:*
+   fun:*
+}
+
+{
+   s9a
+   Memcheck:Leak
+   fun:malloc
+   fun:___kmp_allocate
+   fun:__kmpc_critical
+   fun:GOMP_critical_name_start
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+}
+
+{
+   s9b
+   Memcheck:Leak
+   fun:malloc
+   fun:___kmp_allocate
+   fun:__kmpc_critical
+   fun:GOMP_critical_name_start
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+}
+
+{
+   s9c
+   Memcheck:Leak
+   fun:malloc
+   fun:___kmp_allocate
+   fun:__kmpc_critical
+   fun:GOMP_critical_name_start
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+}
+
+{
+   s10
+   Memcheck:Leak
+   fun:malloc
+   fun:_internal_check_state
+   fun:PAPI_flops
+   fun:phgPerfInit
+   fun:phgInitMPI
+   obj:*
+}
+
+{
+   s11
+   Memcheck:Leak
+   fun:calloc
+   fun:_dlerror_run
+}
+
+{
+   s11a
+   Memcheck:Leak
+   fun:calloc
+   fun:_dl_*
+}
+
+{
+   s11b
+   Memcheck:Leak
+   fun:malloc
+   fun:_dl_*
+   fun:*
+   fun:*
+   fun:*
+   fun:*
+}
+
+{
+   s12
+   Memcheck:Leak
+   fun:malloc
+   fun:__fopen_internal
+   obj:*
+}
+
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   fun:malloc
+   fun:pardiso_c_
+}
+

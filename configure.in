@@ -1,0 +1,3013 @@
+##                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+#
+# $Id: configure.in,v 1.397 2022/06/24 04:57:06 zlb Exp $
+
+AC_PREREQ([2.71])
+dnl AC_INIT(phg)
+AC_INIT()
+dnl ---------------------------------------------------------------------------
+dnl The next command disables checking of --with, --enable and --disable options
+dnl (this feature can be enabled by passing '--enable-option-checking' (enable
+dnl warnings) or '--enable-option-checking=fatal' (enable errors) to configure
+m4_ifdef([AC_DISABLE_OPTION_CHECKING], [AC_DISABLE_OPTION_CHECKING()], [])
+dnl ---------------------------------------------------------------------------
+AC_CONFIG_HEADERS([include/phg/config.h])
+AC_CONFIG_FILES([Makefile Makefile.inc phg.spec doc/Doxyfile phg_tcl/Makefile
+		 utils/phgdoc])
+AC_CONFIG_COMMANDS([default], [chmod 0755 utils/phgdoc], [])
+
+dnl This defines the shell macros host, host_cpu, host_vendor, host_os,
+dnl target, target_cpu, target_vendor and target_os
+AC_CANONICAL_TARGET
+dnl AC_CANONICAL_HOST
+dnl AC_CANONICAL_TARGET
+echo ========== host=$host_cpu:$host_vendor:$host_os, \
+		target=$target_cpu:$target_vendor:$target_os
+
+#-------- save user defined influential environment variables to config-env.log
+echo "# Environment variables provided by user" >config-env.log
+if test -n "$CC"; then echo "CC=\"$CC\"" >>config-env.log; fi
+if test -n "$CFLAGS"; then echo "CFLAGS=\"$CFLAGS\"" >>config-env.log; fi
+if test -n "$LDFLAGS"; then echo "LDFLAGS=\"$LDFLAGS\"" >>config-env.log; fi
+if test -n "$LIBS"; then echo "LIBS=\"$LIBS\"" >>config-env.log; fi
+if test -n "$CPPFLAGS"; then echo "CPPFLAGS=\"$CPPFLAGS\"" >>config-env.log; fi
+if test -n "$CXX"; then echo "CXX=\"$CXX\"" >>config-env.log; fi
+if test -n "$CXXFLAGS"; then echo "CXXFLAGS=\"$CXXFLAGS\"" >>config-env.log; fi
+if test -n "$FC"; then echo "FC=\"$FC\"" >>config-env.log; fi
+if test -n "$FCFLAGS"; then echo "FCFLAGS=\"$FCFLAGS\"" >>config-env.log; fi
+if test -n "$F77"; then echo "F77=\"$F77\"" >>config-env.log; fi
+if test -n "$FFLAGS"; then echo "FFLAGS=\"$FFLAGS\"" >>config-env.log; fi
+if test -n "$CPP"; then echo "CPP=\"$CPP\"" >>config-env.log; fi
+
+#--------------------------------------- PHG version
+
+PHG_DIR="`pwd`"
+AC_READLINK(PHG_DIR)
+
+AC_SUBST(PHG_VERSION, "")
+AC_MSG_CHECKING([PHG version ])
+PHG_VERSION=`grep 'PHG_VERSION[[^_]]' include/phg.h | cut -d '"' -f 2`
+AC_MSG_RESULT([$PHG_VERSION])
+
+AC_SUBST(PHG_DATE, "")
+PHG_DATE=`date +%Y%m%d`
+
+#--------------------------------------- config files and compilers
+
+# Checks for programs.
+dnl if test "$enable_mpi" != no; then
+    AC_PROG_CC(mpicc icc gcc cc)
+    AC_PROG_CXX(mpicxx mpiCC icc g++ CC)
+    AC_PROG_CXX(mpicxx mpiCC icc g++ CC)
+    AC_PROG_FC(mpif95 mpif90 ifort ifc gfortran f95 f90)
+    AC_PROG_F77(mpif77 ifort ifc gfortran f77 g77)
+dnl else
+dnl     AC_PROG_CC
+dnl     AC_PROG_CXX
+dnl fi
+
+AC_PROG_RANLIB
+AC_PROG_CPP
+
+dnl AC_PROG_AR
+AC_SUBST(AR, "$AR")
+if test -z "$AR"; then
+    AR=ar
+fi
+
+dnl Change relative path in compilers to full path
+AC_FULLPATH(CC)
+AC_FULLPATH(CXX)
+AC_FULLPATH(FC)
+AC_FULLPATH(F77)
+AC_FULLPATH(CPP)
+AC_FULLPATH(AR)
+AC_FULLPATH(LINKER)
+AC_FULLPATH(RANLIB)
+
+if test "$GCC" = "yes"; then
+    AC_MSG_CHECKING([whether we are using Intel compilers ])
+    if test "$cross_compiling" = "yes"; then
+	if $CC -V 2>&1 | grep -q Intel; then
+	    ICC="yes"
+	else
+	    ICC="no"
+	fi
+    else
+	AC_RUN_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		int
+		main(int argc, char **argv)
+		{
+		#ifdef /*__INTEL_COMPILER*/ __ICC
+		    fprintf(stderr, "Intel compiler version: %d\n", __ICC);
+		    return 0;
+		#else
+		    return 1;
+		#endif
+	}])], ICC=yes, ICC=no)
+    fi
+    AC_MSG_RESULT($ICC)
+    if test "$ICC" = "yes"; then
+	CFLAGS="$CFLAGS -w"
+    else
+	CFLAGS="$CFLAGS -Wall"
+	AC_MSG_CHECKING([whether $CC supports '-Wmissing-field-initializers' ])
+	AC_LANG(C)
+	CFLAGS_bak="$CFLAGS"
+	CFLAGS="$CFLAGS -Wmissing-field-initializers"
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([main(){}])], tmp=yes, tmp=no)
+	if test $tmp = yes; then
+	    AC_MSG_RESULT(yes)
+	else
+	    AC_MSG_RESULT(no)
+	    CFLAGS="$CFLAGS_bak"
+	fi
+    fi
+fi
+if test "$GXX" = "yes" -a "$CXX" != "icc"; then
+    if $CXX -V 2>&1 | grep -q Intel; then
+	CXXFLAGS="$CXXFLAGS -w"
+    else
+	CXXFLAGS="$CXXFLAGS -Wno-deprecated"
+    fi
+fi
+
+# MPICHCXX workaround
+CXXFLAGS="$CXXFLAGS -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX"
+
+# The default linker
+AC_SUBST(LINKER, "$LINKER")
+
+#--------------------------------------- header files
+
+dnl m4_warn([obsolete],
+dnl [The preprocessor macro `STDC_HEADERS' is obsolete.
+dnl   Except in unusual embedded environments, you can safely include all
+dnl   ISO C90 headers unconditionally.])dnl
+# Autoupdate added the next two lines to ensure that your configure
+# script's behavior did not change.  They are probably safe to remove.
+AC_CHECK_INCLUDES_DEFAULT
+AC_PROG_EGREP
+
+dnl AC_CHECK_HEADERS([stdlib.h string.h sys/time.h unistd.h])
+
+AC_CHECK_HEADERS([regex.h])
+AC_CHECK_HEADERS([execinfo.h])	dnl for backtrace()
+
+#--------------------------------------- library functions.
+
+#
+# Note: AC_FUNC_MEMCMP reports OK on o3800, but the second memcmp in
+# function phgOpenInputFile_() (utils.c) segfaults!
+#
+dnl AC_FUNC_MEMCMP
+
+dnl AC_FUNC_MALLOC
+dnl AC_FUNC_REALLOC
+dnl AC_FUNC_STRTOD
+dnl AC_FUNC_VPRINTF
+dnl AC_CHECK_FUNCS([gettimeofday memmove memset strchr strdup strstr])
+
+LIBS="$LIBS -lm"
+# The following is useful on non Linux systems
+###AC_ADD_FLAGS(CPPFLAGS, -I/usr/local/include)
+###AC_ADD_FLAGS(LDFLAGS, -L/usr/local/lib)
+
+dnl -------------------------------------------------------------------------
+dnl Note: since Autoconf 2.69 the following FORTRAN macros require the files
+dnl	  install-sh, config.gues and config.sub to be present.
+dnl -------------------------------------------------------------------------
+
+if test -n "$FC"; then
+    AC_FC_WRAPPERS
+    AC_FC_LIBRARY_LDFLAGS
+    AC_FC_FUNC(minreswrapper,MINRESWRAPPER)	dnl MINRES
+else
+    MINRESWRAPPER=minreswrapper_
+fi
+if test -n "$F77"; then
+    AC_F77_WRAPPERS
+    AC_F77_LIBRARY_LDFLAGS
+
+    AC_F77_FUNC(dgemm,DGEMM)		dnl BLAS
+    AC_F77_FUNC(dgels,DGELS)		dnl LAPACK
+    AC_F77_FUNC(mc64ad,MC64AD)		dnl SuperLU_Dist
+    AC_F77_FUNC(pdsaupd,PDSAUPD)		dnl Parallel ARPACK
+    AC_F77_FUNC(pardiso,PARDISO)		dnl PARDISO
+    AC_F77_FUNC(pdsygvx,PDSYGVX)		dnl ScaLAPACK
+else
+    DGEMM=dgemm_
+    DGELS=dgels_
+    MC64AD=mc64ad_
+    PDSAUPD=pdsaupd_
+    PARDISO=pardiso_
+    PDSYGVX=pdsygvx_
+fi
+
+
+AC_MSG_NOTICE(*** =============================================================)
+
+#--------------------------------------- anonymous union
+
+AC_ARG_ENABLE(anonymous-union,
+[  --enable-anonymous-union enable anonymous union
+  --disable-anonymous-union disable anonymous union],,
+  enable_anonymous_union=auto)
+AC_SUBST(USE_ANYNYMOUS_UNION, "")
+if test "$enable_anonymous_union" = "auto"; then
+    AC_MSG_CHECKING([whether C/C++ compilers support anonymous union ])
+    AC_LANG(C)
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,
+			    struct {union {int a; short b;};} s; s.a = 0;)],
+		      enable_anonymous_union="yes",
+		      enable_anonymous_union="no")
+    if test "$enable_anonymous_union" != "no"; then
+	AC_LANG(C++)
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,
+				struct {union {int a; short b;};} s; s.a = 0;)],
+			  enable_anonymous_union="yes",
+			  enable_anonymous_union="no")
+    fi
+    AC_MSG_RESULT($enable_anonymous_union)
+else
+    if test "$enable_anonymous_union" != "no"; then
+	AC_MSG_NOTICE([*** anonymous union in C/C++ structs enabled])
+    else
+	AC_MSG_NOTICE([*** anonymous union in C/C++ structs disabled])
+    fi
+fi
+if test "$enable_anonymous_union" != "no"; then
+    AC_DEFINE(USE_ANONYMOUS_UNION, 1)
+else
+    AC_DEFINE(USE_ANONYMOUS_UNION, 0)
+fi
+
+#--------------------------------------- quad-cuboid.hpp C++ compatibility
+
+AC_ARG_ENABLE(quad-cuboid,
+[  --enable-quad-cuboid    enable quad-cuboid.hpp
+  --disable-quad-cuboid   disable quad-cuboid.hpp],, enable_quad_cuboid=yes)
+AC_SUBST(USE_QUAD_CUBOID, "")
+if test "$enable_quad_cuboid" != "no"; then
+    AC_MSG_CHECKING([C++ compatibility/option for quad-cuboid ])
+    AC_LANG(C++)
+    for cxxflag in "" "-std=gnu++11" "-std=c++11"; do
+	# Required features: function wrappers, initializer lists, I/O streams,
+	# STL algorithms, lambda expressions. Expected output: 0.00e+00
+	CXXFLAGS_bak="$CXXFLAGS"
+	if test -n "$cxxflag"; then
+	    CXXFLAGS="$CXXFLAGS $cxxflag"
+	fi
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+#include <iostream>
+#include <set>
+#include <vector>
+using namespace std;
+typedef function<vector<double>(set<double>)> FUNC;
+typedef vector<FUNC> FUNCLIST;
+vector<double> forwarding_test(FUNCLIST f, set<double> x) {return f[[0]](x);}
+int main() {
+    auto f = [[]](set<double> x) -> vector<double> { return {1.0, 0.0, 2.0}; };
+    auto y = forwarding_test(FUNCLIST{f}, set<double>{0.0});
+    sort(begin(y), end(y)); cout.precision(2);
+    cout << scientific << y[[0]] << endl;
+    return 0; }
+])], enable_quad_cuboid="yes", enable_quad_cuboid="no")
+	if test "$enable_quad_cuboid" = "yes"; then
+	    break
+	fi
+	CXXFLAGS="$CXXFLAGS_bak"
+    done
+    AC_MSG_RESULT($enable_quad_cuboid)
+fi
+if test "$enable_quad_cuboid" != "no"; then
+    if test -n "$cxxflag"; then
+	AC_MSG_NOTICE([*** quad_cuboid enabled (with option "$cxxflag")])
+    else
+	AC_MSG_NOTICE([*** quad_cuboid enabled])
+    fi
+    AC_DEFINE(USE_QUAD_CUBOID, 1)
+else
+    AC_MSG_NOTICE([*** quad_cuboid disabled])
+    AC_DEFINE(USE_QUAD_CUBOID, 0)
+fi
+
+#--------------------------------------- shared library
+
+AC_SUBST(LIB_SUFFIX, "")
+AC_SUBST(BUILD_SHARED, "")
+AC_SUBST(BUILD_SHARED_LIBS, "")
+AC_SUBST(BUILD_CFLAGS, "")
+AC_SUBST(BUILD_CXXFLAGS, "")
+dnl AC_SUBST(BUILD_FFLAGS, "")
+AC_ARG_ENABLE(shared,
+[  --enable-shared         build shared library libphg.so (default)
+  --disable-shared        build static library libphg.a
+  --with-build-shared     the BUILD_SHARED macro (default "gcc -shared" or "${CC} -shared")],,enable_shared="auto")
+
+if test "$enable_shared" = "auto"; then
+dnl    if test "$target_vendor" = "apple"; then
+dnl	# use static link by default on MacOS, before the rpath issue is solved
+dnl	enable_shared="no"
+dnl    else
+	enable_shared="yes"
+dnl    fi
+fi
+
+if test "$enable_shared" = "yes"; then
+    if test "$target_os" = "mingw32"; then
+	/bin/rm -f src/libphg.a src/libphg.so
+	LIB_SUFFIX=".dll"
+    else
+	/bin/rm -f src/libphg.a src/libphg.dll
+	LIB_SUFFIX=".so"
+    fi
+    if test -n "$with_build_shared"; then
+	BUILD_SHARED="$with_build_shared"
+    elif gcc -v >/dev/null 2>&1 && \
+	 test "$cross_compiling" != "yes" && \
+	 test "$target_vendor" != "apple" # MacOS: force using "${CC} -shared"
+    then
+	BUILD_SHARED="gcc -shared"
+    else
+	BUILD_SHARED="\${CC} -shared"
+    fi
+    # TODO: figure out a proper way to determine when to use the PIC flag
+    if test "$target_cpu" != "i686" -a "$target_cpu" != "i586" -a \
+	    "$target_cpu" != "i486" -a "$target_cpu" != "i386"; then
+	BUILD_CFLAGS="-fPIC"
+	BUILD_CXXFLAGS="-fPIC"
+	dnl BUILD_FFLAGS="-fPIC"
+    fi
+    dnl TODO: check that the above settings work!
+    AC_MSG_NOTICE([*** building shared library libphg$LIB_SUFFIX ("$BUILD_SHARED")])
+else
+    /bin/rm -f src/libphg.so src/libphg.dll
+    LIB_SUFFIX=".a"
+    BUILD_SHARED=""
+    BUILD_CFLAGS=""
+    BUILD_CXXFLAGS=""
+    dnl BUILD_FFLAGS=""
+    AC_MSG_NOTICE([*** building static library libphg$LIB_SUFFIX])
+fi
+
+dnl -------------------------------------------------------------------------
+dnl Note:
+dnl  May need to add option "-Wl,--no-as-needed" when using '--disable-link'
+dnl  on systems (e.g. Ubuntu) with "--as-needed" as the default link option.
+dnl
+dnl  See: https://wiki.gentoo.org/wiki/Project:Quality_Assurance/As-needed
+dnl -------------------------------------------------------------------------
+AC_ARG_ENABLE(link,
+[  --enable-link           link libphg.so against the libs (default)
+  --disable-link          do not link libphg.so against the libs],,
+enable_link="auto")
+if test "$enable_link" = "auto"; then
+    if test "$target_vendor" = "apple"; then
+	enable_link="yes"
+    else
+	enable_link="no"
+    fi
+fi
+if test "$enable_link" = "yes"; then
+    enable_link="yes"
+    disable_link="no"
+else
+    enable_link="no"
+    disable_link="yes"
+fi
+
+#--------------------------------------- rpath
+
+AC_SUBST(RPATH_FLAG, "")
+AC_ARG_ENABLE(rpath,
+[  --enable-rpath          enable use of rpath (default)
+  --disable-rpath         disable use of rpath
+  --with-rpath-flag=FLAG  compiler flag for rpath (e.g., "-Wl,-rpath,")],,
+enable_rpath=yes)
+if test -z "$with_rpath_flag" -a "$enable_rpath" != "no"; then
+    AC_MSG_CHECKING([for compiler flag for specifying rpath ])
+    LIBS_bak="$LIBS"
+    for with_rpath_flag in "-Wl,-rpath," "-Wl,-rpath " "-Wl,--rpath " \
+			   "-rpath " "--rpath " "-Wl,-R" "-R" "-R " ; do
+	LIBS="$LIBS_bak ${with_rpath_flag}/usr/lib"
+	AC_LINK_IFELSE([AC_LANG_PROGRAM()], enable_rpath=yes, enable_rpath=no)
+	if test "$enable_rpath" = "yes"; then break; fi
+    done
+    LIBS="$LIBS_bak"
+    if test "$enable_rpath" = "yes"; then
+	AC_MSG_RESULT("$with_rpath_flag")
+	RPATH_FLAG="$with_rpath_flag"
+    else
+	AC_MSG_RESULT(unknown)
+	RPATH_FLAG="unknown"
+    fi
+fi
+
+#--------------------------------------- MPI hacks
+
+# Hacky: enable MPI_Sendrecv test on LSSC2
+AC_SUBST(SENDRECV_TEST, "")
+if false -a test -d /usr/local/mpich-1.2.5..10; then
+    AC_MSG_NOTICE([*** activate MPI_Sendrecv test (slow!)])
+    AC_DEFINE(SENDRECV_TEST, 1)
+    sendrecv_test="yes"
+else
+    AC_MSG_NOTICE([*** disactivate MPI_Sendrecv test])
+    AC_DEFINE(SENDRECV_TEST, 0)
+    sendrecv_test="no"
+fi
+
+# ALLTOALLV_HACK
+AC_SUBST(ALLTOALLV_HACK, "")
+AC_ARG_ENABLE(alltoallv-hack,
+[  --enable-alltoallv-hack use phgAlltoallv (default)
+  --disable-alltoallv-hack use MPI_Alltoallv],,
+    enable_alltoallv_hack=yes)
+if test "$enable_alltoallv_hack" != no; then
+    AC_MSG_NOTICE([*** use custom phgAlltoallv])
+    AC_DEFINE(ALLTOALLV_HACK, 1)
+else
+    AC_MSG_NOTICE([*** use MPI_Alltoallv for phgAlltoallv])
+    AC_DEFINE(ALLTOALLV_HACK, 0)
+fi
+
+# REALLOC_HACK
+AC_SUBST(REALLOC_HACK, "")
+AC_ARG_ENABLE(realloc-hack,
+[  --enable-realloc-hack   enable realloc hack (default, required for MVAPICH2)
+  --disable-realloc-hack  disable realloc hack],,
+    enable_realloc_hack=yes)
+if test "$enable_realloc_hack" != no; then
+    AC_MSG_NOTICE([*** enable realloc() hack])
+    AC_DEFINE(REALLOC_HACK, 1)
+else
+    AC_MSG_NOTICE([*** disable realloc() hack])
+    AC_DEFINE(REALLOC_HACK, 0)
+fi
+
+# MPI_Comm workaround for shenteng.sccas.cn (to be removed later)
+AC_SUBST(NO_NEW_COMMUNICATOR, "")
+if test -x /bin/hostname; then
+  if /bin/hostname | grep -q 'ln.\.sccas\.cn$'; then
+    AC_MSG_NOTICE(*** disable creation of new communicators on DeepComp 6800)
+    AC_DEFINE(NO_NEW_COMMUNICATOR, 1)
+  else
+    AC_DEFINE(NO_NEW_COMMUNICATOR, 0)
+  fi
+  AC_DEFINE(NO_NEW_COMMUNICATOR, 0)
+fi
+
+#--------------------------------------- Fortran libs
+
+AC_ARG_WITH(f77-libs, [  --with-f77-libs[[=LIBs]]  Fortran 77 libs],,)
+if test "$with_f77_libs" = "yes" -o "$with_f77_libs" = ""; then
+    AC_ADD_LIBS(LIBS, $FLIBS, append)
+else
+    if test "$with_f77_libs" != "no"; then 
+	AC_ADD_LIBS(LIBS, $with_f77_libs, append)
+    fi
+fi
+
+AC_ARG_WITH(fc-libs, [  --with-fc-libs[[=LIBs]]   Fortran libs],,)
+if test "$with_fc_libs" = "yes" -o "$with_fc_libs" = ""; then
+    AC_ADD_LIBS(LIBS, $FCLIBS, append)
+else
+    if test "$with_fc_libs" != "no"; then
+	AC_ADD_LIBS(LIBS, $with_fc_libs, append)
+    fi
+fi
+
+#--------------------------------------- OpenMP (note: can call AC_OPENMP)
+AC_LANG(C)
+AC_SUBST(USE_OMP, "0")
+AC_SUBST(OMP_FLAGS, "")
+AC_ARG_ENABLE(omp,
+[  --enable-omp            enable OpenMP (default)
+  --disable-omp           disable OpenMP
+  --with-omp-flags=FLAGS  compiler flags for OpenMP],,enable_omp="yes")
+if test "$enable_omp" != "no"; then
+    AC_MSG_CHECKING([for OpenMP support ])
+    tmp="$with_omp_flags"
+    if test -z "$tmp"; then
+	tmp="-fopenmp -openmp"
+    fi
+    CFLAGS_bak="$CFLAGS"
+    CXXFLAGS_bak="$CXXFLAGS"
+    LDFLAGS_bak="$LDFLAGS"
+    for with_omp_flags in $tmp; do
+	CFLAGS="$CFLAGS_bak"
+	CXXFLAGS="$CXXFLAGS_bak"
+	LDFLAGS="$LDFLAGS_bak"
+	AC_ADD_FLAGS(CFLAGS, $with_omp_flags)
+	AC_ADD_FLAGS(CXXFLAGS, $with_omp_flags)
+	AC_ADD_FLAGS(LDFLAGS, $with_omp_flags)
+	enable_omp="yes"
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <omp.h>
+		static int dummy;
+#pragma omp threadprivate(dummy)
+		main() {dummy = omp_get_max_threads();}])],,enable_omp="no")
+	if test "$enable_omp" != "no"; then break; fi
+    done
+    if test "$enable_omp" != "no"; then
+	AC_MSG_RESULT($with_omp_flags)
+	AC_DEFINE(USE_OMP, 1)
+	if test "ICC" = "yes"; then
+	    MKL_GUIDE="-lguide"
+	else
+	    MKL_GUIDE="-liomp5"
+	fi
+    else
+	AC_MSG_RESULT(no)
+	CFLAGS="$CFLAGS_bak"
+	CXXFLAGS="$CXXFLAGS_bak"
+	LDFLAGS="$LDFLAGS_bak"
+	MKL_GUIDE="-lguide"
+    fi
+else
+    MKL_GUIDE="-lguide"
+fi
+
+if test "ICC" = "yes"; then
+    MKL_RT="-lmkl_rt"
+else
+    if test "$target_cpu" = "x86_64"; then
+	MKL_RT="-lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread"
+    else
+	MKL_RT="-lmkl_intel -lmkl_core -lmkl_gnu_thread"
+    fi
+fi
+
+# OMP_ALLOC_HACK
+AC_SUBST(OMP_ALLOC_HACK, "")
+AC_ARG_ENABLE(omp-alloc-hack,
+[  --enable-omp-alloc-hack enable malloc/free OpenMP hack
+  --disable-omp-alloc-hack disable malloc/free OpenMP hack (default)],,
+    enable_omp_alloc_hack=no)
+if test "$enable_omp_alloc_hack" != no; then
+    AC_MSG_NOTICE([*** enable malloc/free OpenMP hack])
+    AC_DEFINE(OMP_ALLOC_HACK, 1)
+else
+    AC_MSG_NOTICE([*** disable malloc/free OpenMP hack])
+    AC_DEFINE(OMP_ALLOC_HACK, 0)
+fi
+
+#--------------------------------------- Floating point exceptions
+AC_LANG(C)
+AC_SUBST(HAVE_FEENABLEEXCEPT, "0")
+AC_ARG_ENABLE(fpetrap,
+[  --enable-fpetrap        enable trapping floating point exceptions (default)
+  --disable-fpetrap       disable trapping floating point exceptions],,
+	enable_fpetrap=yes)
+if test "$enable_fpetrap" != no; then
+    AC_MSG_CHECKING([for feenableexcept ])
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#define __USE_GNU
+		    #include <fenv.h>
+		    main() {feenableexcept(0);}])],,enable_fpetrap=no)
+    AC_MSG_RESULT($enable_fpetrap)
+fi
+if test "$enable_fpetrap" != no; then
+    AC_DEFINE(HAVE_FEENABLEEXCEPT, 1)
+fi
+
+#--------------------------------------- INT type
+
+AC_ARG_WITH(, [  --with-int=type         Specify type of INT (short|int|long|long long, default int)],,)
+if test -z "$with_int"; then with_int="int"; fi
+
+# This will remove extra spaces in $with_int
+with_int="`echo $with_int`"
+
+AC_CHECK_SIZEOF([short])
+AC_CHECK_SIZEOF([int])
+AC_CHECK_SIZEOF([long])
+AC_CHECK_SIZEOF([long long])
+
+if test "$with_int" = "short"; then
+    SIZEOF_PHG_INT=$ac_cv_sizeof_short
+    AC_DEFINE(IT_PHG, IT_SHORT)
+    AC_DEFINE(dFMT, ["hd"])
+    AC_DEFINE(TYPEOF_PHG_INT, short)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_INT, $ac_cv_sizeof_short)
+    AC_MSG_NOTICE([*** use 'short' for INT])
+elif test "$with_int" = "int"; then
+    SIZEOF_PHG_INT=$ac_cv_sizeof_int
+    AC_DEFINE(IT_PHG, IT_INT)
+    AC_DEFINE(dFMT, ["d"])
+    AC_DEFINE(TYPEOF_PHG_INT, int)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_INT, $ac_cv_sizeof_int)
+    AC_MSG_NOTICE([*** use 'int' for INT])
+elif test "$with_int" = "long"; then
+    SIZEOF_PHG_INT=$ac_cv_sizeof_long
+    AC_DEFINE(IT_PHG, IT_LONG)
+    AC_DEFINE(dFMT, ["ld"])
+    AC_DEFINE(TYPEOF_PHG_INT, long)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_INT, $ac_cv_sizeof_long)
+    AC_MSG_NOTICE([*** use 'long' for INT])
+elif test "$with_int" = "long long"; then
+    SIZEOF_PHG_INT=$ac_cv_sizeof_long_long
+    AC_DEFINE(IT_PHG, IT_LONG_LONG)
+    AC_DEFINE(dFMT, ["lld"])
+    AC_DEFINE(TYPEOF_PHG_INT, [long long])
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_INT, $ac_cv_sizeof_long_long)
+    AC_MSG_NOTICE([*** use 'long long' for INT])
+else
+    SIZEOF_PHG_INT=0
+fi
+if test -z "$SIZEOF_PHG_INT" -o "$SIZEOF_PHG_INT" = "0"; then
+    AC_MSG_ERROR([Invalid argument "$with_int" for "--with-int=" option!])
+fi
+
+#--------------------------------------- FLOAT type
+
+AC_ARG_ENABLE(long-double,
+[
+  --enable-long-double    use long double for FLOAT (obsoleted by --with-float=)
+  --disable-long-double   do not use long double for FLOAT (default, obsolete)
+  --with-float=type       Specify type of FLOAT (float|double|long double|__float128, default double)],,enable_long_double=no)
+if test "$enable_long_double" = "yes"; then with_float="long double"; fi
+if test -z "$with_float"; then with_float="double"; fi
+
+# This will remove extra spaces in $with_float
+with_float="`echo $with_float`"
+
+AC_CHECK_SIZEOF([float])
+AC_CHECK_SIZEOF([double])
+AC_CHECK_SIZEOF([long double])
+AC_CHECK_SIZEOF([__float128])
+
+if test "$with_float" = "float"; then
+    SIZEOF_PHG_FLOAT=$ac_cv_sizeof_float
+    AC_DEFINE(FT_PHG, FT_FLOAT)
+    AC_DEFINE(TYPEOF_PHG_FLOAT, float)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_FLOAT, $ac_cv_sizeof_float)
+    AC_MSG_NOTICE([*** use 'float' for FLOAT])
+elif test "$with_float" = "double"; then
+    SIZEOF_PHG_FLOAT=$ac_cv_sizeof_double
+    AC_DEFINE(FT_PHG, FT_DOUBLE)
+    AC_DEFINE(TYPEOF_PHG_FLOAT, double)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_FLOAT, $ac_cv_sizeof_double)
+    AC_MSG_NOTICE([*** use 'double' for FLOAT])
+elif test "$with_float" = "long double"; then
+    SIZEOF_PHG_FLOAT=$ac_cv_sizeof_long_double
+    AC_DEFINE(FT_PHG, FT_LONG_DOUBLE)
+    AC_DEFINE(TYPEOF_PHG_FLOAT, [long double])
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_FLOAT, $ac_cv_sizeof_long_double)
+    AC_MSG_NOTICE([*** use 'long double' for FLOAT])
+elif test "$with_float" = "__float128"; then
+    SIZEOF_PHG_FLOAT=$ac_cv_sizeof___float128
+    AC_DEFINE(FT_PHG, FT___FLOAT128)
+    AC_DEFINE(TYPEOF_PHG_FLOAT, __float128)
+    AC_DEFINE_UNQUOTED(SIZEOF_PHG_FLOAT, $ac_cv_sizeof___float128)
+    AC_MSG_NOTICE([*** use '__float128' for FLOAT])
+else
+    SIZEOF_PHG_FLOAT=0
+fi
+if test -z "$SIZEOF_PHG_FLOAT" -o "$SIZEOF_PHG_FLOAT" = "0"; then
+    AC_MSG_ERROR([Invalid argument "$with_float" for "--with-float=" option!])
+fi
+
+dnl Check libquadmath
+dnl Note: the default action is #define or #undef HAVE_LIBQUADMATH,
+dnl       which is not what we want
+
+AC_ARG_ENABLE(quadmath,
+[  --enable-quadmath       enable quadmath if available (default)
+  --disable-quadmath      disable quadmath],,
+  enable_quadmath=yes)
+
+if test "$enable_quadmath" = "yes"; then
+    AC_CHECK_LIB([quadmath], [sinq], [AC_DEFINE(HAVE_LIBQUADMATH, 1)], 
+	[AC_DEFINE(HAVE_LIBQUADMATH, 0)], -lm)
+    AC_MSG_CHECKING([quadmath.h ])
+    AC_CHECK_HEADER([quadmath.h], [AC_DEFINE(HAVE_QUADMATH_H, 1)], 
+	[AC_DEFINE(HAVE_QUADMATH_H, 0)])
+    AC_MSG_RESULT($HAVE_QUADMATH_H)
+else
+    AC_MSG_NOTICE(*** quadmath disabled)
+    AC_DEFINE(HAVE_LIBQUADMATH, 0)
+    AC_DEFINE(HAVE_QUADMATH_H, 0)
+fi
+
+dnl Check the 'Q' suffix in float constants
+AC_MSG_CHECKING([for the 'Q' suffix in float constants ])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(, double a = 1.0Q;)],
+                  have_q_suffix="yes", have_q_suffix="no")
+AC_MSG_RESULT($have_q_suffix)
+if test "$have_q_suffix" = "yes"; then
+    AC_DEFINE(HAVE_Q_SUFFIX, 1)
+else
+    AC_DEFINE(HAVE_Q_SUFFIX, 0)
+fi
+
+#--------------------------------------- Grid type
+
+AC_ARG_WITH(, [  --with-grid-type=type   Grid type (tetra|hexa|mixed, default tetra)],,)
+if test -z "$with_grid_type"; then with_grid_type="tetra"; fi
+# This will remove extra spaces in $with_
+with_grid_type="`echo $with_grid_type`"
+AC_MSG_NOTICE([*****************************************])
+case "$with_grid_type" in
+    tet|tetra|tetrahedral|tetrahedron)
+	AC_DEFINE_UNQUOTED(PHG_GRID_TYPE, GRID_TYPE_TET)
+	AC_MSG_NOTICE([*** configuring PHG for tetrahedral grids])
+	;;
+    hex|hexa|hexahedral|hexahedron)
+	AC_DEFINE_UNQUOTED(PHG_GRID_TYPE, GRID_TYPE_HEX)
+	AC_MSG_NOTICE([*** configuring PHG for hexahedral grids])
+	;;
+    mix|mixed)
+	AC_DEFINE_UNQUOTED(PHG_GRID_TYPE, GRID_TYPE_MIX)
+	AC_MSG_NOTICE([*** configuring PHG for mixed grids])
+	;;
+    *)
+	AC_MSG_ERROR([Invalid argument "$with_grid_type" for "--with-grid_type=" option!])
+	;;
+esac
+AC_MSG_NOTICE([*****************************************])
+
+#--------------------------------------- DG bases
+
+AC_ARG_ENABLE(lagrange-dg,
+[  --enable-lagrange-dg    DG bases on top of Lagrange bases (default)
+  --disable-lagrange-dg   DG bases on top of hierarchical bases],,
+  enable_lagrange_dg=yes)
+
+if test "$enable_lagrange_dg" = "yes"; then
+    AC_MSG_NOTICE(*** use Lagrangian DG bases)
+    AC_DEFINE(USE_HB_FOR_DG, 0)
+else
+    AC_MSG_NOTICE(*** use hierarchical DG bases)
+    AC_DEFINE(USE_HB_FOR_DG, 1)
+fi
+
+#--------------------------------------- phgdoc
+
+AC_SUBST(PHG_HEADERS, "")
+PHG_HEADERS="\"${PHG_DIR}/include/*.h ${PHG_DIR}/include/*/*.h\""
+
+AC_SUBST(PHG_SOURCES, "")
+PHG_SOURCES="\"${PHG_DIR}/src/*.c ${PHG_DIR}/src/*.cxx\""
+
+#--------------------------------------- endianness
+
+AC_LANG(C)
+AC_CHECK_FUNCS(fcloseall)
+AC_C_BIGENDIAN([AC_DEFINE(PHG_BIGENDIAN,1)], [AC_DEFINE(PHG_BIGENDIAN,0)], [])
+
+#--------------------------------------- compression programs
+
+# check for gzip program
+AC_SUBST(GZIP_PROG, "")
+AC_ARG_ENABLE(gzip,
+[  --enable-gzip           enable gzip support (default)
+  --disable-gzip          disable gzip support
+  --with-gzip=PROG        name of the gzip program],,enable_gzip=yes)
+if test "$enable_gzip" != no; then
+    if test "x$with_gzip" = x; then
+	AC_MSG_CHECKING([for gzip program ])
+	with_gzip=`which gzip`
+	if ! test -x "$with_gzip"; then
+	    with_gzip=""
+	    AC_MSG_RESULT(not found)
+	else
+	    AC_MSG_RESULT($with_gzip)
+	fi
+    fi
+    if test "x$with_gzip" != x; then
+	GZIP_PROG="-DGZIP_PROG=\"\\\"$with_gzip\\\"\""
+    else
+	GZIP_PROG=""
+	enable_gzip=no
+    fi
+fi
+if test "$enable_gzip" != no; then
+    AC_MSG_NOTICE(*** gzip program = $with_gzip)
+else
+    AC_MSG_NOTICE(*** gzip support disabled)
+fi
+
+# check for bzip2 program
+AC_SUBST(BZIP2_PROG, "")
+AC_ARG_ENABLE(bzip2,
+[  --enable-bzip2          enable bzip2 support (default)
+  --disable-bzip2         disable bzip2 support
+  --with-bzip2=PROG       name of the bzip2 program],,enable_bzip2=yes)
+if test "$enable_bzip2" != no; then
+    if test "x$with_bzip2" = x; then
+	AC_MSG_CHECKING([for bzip2 program ])
+	with_bzip2=`which bzip2`
+	if ! test -x "$with_bzip2"; then
+	    with_bzip2=""
+	    AC_MSG_RESULT(not found)
+	else
+	    AC_MSG_RESULT($with_bzip2)
+	fi
+    fi
+    if test "x$with_bzip2" != x; then
+	BZIP2_PROG="-DBZIP2_PROG=\"\\\"$with_bzip2\\\"\""
+    else
+	BZIP2_PROG=""
+	enable_bzip2=no
+    fi
+fi
+if test "$enable_bzip2" != no; then
+    AC_MSG_NOTICE(*** bzip2 program = $with_bzip2)
+else
+    AC_MSG_NOTICE(*** bzip2 support disabled)
+fi
+
+#--------------------------------------- debugging
+
+# check for debug flag
+AC_ARG_ENABLE(debug,
+[  --enable-debug          enable debugging codes (default)
+  --disable-debug         disable debugging codes],,enable_debug=yes)
+if test "$enable_debug" = yes; then
+    AC_DEFINE(DEBUG, 1)
+    AC_MSG_NOTICE(*** debug enabled)
+else
+    AC_DEFINE(DEBUG, 0)
+    AC_MSG_NOTICE(*** debug disabled)
+fi
+
+#--------------------------------------- Tcl/Tk
+
+AC_SUBST(TEST, "")
+AC_SUBST(PHG_TCL, "")
+AC_SUBST(TCLTK_INCLUDE, "")
+AC_SUBST(TCLTK_LIBS, "")
+AC_LANG(C)
+AC_ARG_ENABLE(tcl,
+[  --enable-tcl            enable tcl support
+  --disable-tcl           disable tcl support (default)
+  --with-tcl-config=FILE  pathname of tclConfig.sh
+  --with-tcl-libdir=DIR   path for Tcl library (normally not needed)
+  --with-tcl-incdir=DIR   path for Tcl header file (normally not needed)],,
+  enable_tcl=no)
+if test "$enable_tcl" != no; then
+    enable_tcl=no
+    if test x"$with_tcl_config" != x; then
+	try="$with_tcl_config"
+    else
+	try="/usr/lib*/tclConfig.sh /usr/local/lib*/tclConfig.sh"
+    fi
+    for c in $try; do
+	if test -r $c; then
+	    . $c
+	    if test x"$TCL_LIB_SPEC" != x; then
+		enable_tcl=yes
+		TCL_LIB_SPEC=`echo $TCL_LIB_SPEC | sed -e 's/\${.*}//g'`
+		break
+	    fi
+	fi
+    done
+fi
+if test "$enable_tcl" != no; then
+    LIBS_bak="${LIBS}"
+    CPPFLAGS_bak="${CPPFLAGS}"
+    CPPFLAGS="$TCL_INCLUDE_SPEC"
+    LIBS="$TCL_LIB_SPEC $TCL_LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <tcl.h>
+		    main() {Tcl_Main(0,0,0);}])],,enable_tcl=no)
+    LIBS="${LIBS_bak}"
+    CPPFLAGS="${CPPFLAGS_bak}"
+fi
+if test "$enable_tcl" != no; then
+    AC_MSG_NOTICE(*** Tcl support enabled)
+    TCLTK_INCLUDE="$TCL_INCLUDE_SPEC"
+    TCLTK_LIBS="$TCL_LIB_SPEC $TCL_LIBS"
+    AC_MSG_NOTICE(*** Tcl include spec = $TCL_INCLUDE_SPEC)
+    AC_MSG_NOTICE(*** Tcl lib spec = $TCL_LIB_SPEC)
+    AC_DEFINE(USE_TCL, 1)
+    PHG_TCL="phg_tcl"
+else
+    AC_MSG_NOTICE(*** Tcl support disabled)
+    AC_DEFINE(USE_TCL, 0)
+fi
+
+AC_ARG_ENABLE(tk,
+[  --enable-tk             enable tk support
+  --disable-tk            disable tk support (default)
+  --with-tk-config=FILE   pathname of tkConfig.sh
+  --with-tk-libdir=DIR    path for Tk library (normally not needed)
+  --with-tk-incdir=DIR    path for Tk header file (normally not needed)],,
+  enable_tk=no)
+if test "$enable_tcl" = no; then enable_tk=no; fi
+if test "$enable_tk" != no; then
+    enable_tk=no
+    if test x"$with_tk_config" != x; then
+	try="$with_tk_config"
+    else
+	try="/usr/lib*/tkConfig.sh /usr/local/lib*/tkConfig.sh"
+    fi
+    for c in $try; do
+	if test -r $c; then
+	    . $c
+	    if test x"$TK_LIB_SPEC" != x; then
+		enable_tk=yes
+		TK_LIB_SPEC=`echo $TK_LIB_SPEC | sed -e 's/\${.*}//g'`
+		break
+	    fi
+	fi
+    done
+fi
+if test "$enable_tk" != no; then
+    LIBS_bak="${LIBS}"
+    CPPFLAGS_bak="${CPPFLAGS}"
+    CPPFLAGS="$TK_INCLUDE_SPEC"
+    LIBS="$TK_LIB_SPEC $TCL_LIB_SPEC $TK_LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <tk.h>
+		    main() {Tk_Main(0,((char **)NULL),0);}])],,enable_tk=no)
+    LIBS="${LIBS_bak}"
+    CPPFLAGS="${CPPFLAGS_bak}"
+fi
+if test "$enable_tk" != no; then
+    AC_MSG_NOTICE(*** Tk support enabled)
+    if test "$TCLTK_INCLUDE" != "$TK_INCLUDE_SPEC"; then
+	TCLTK_INCLUDE="$TCLTK_INCLUDE $TK_INCLUDE_SPEC"
+    fi
+    TCLTK_LIBS="$TK_LIB_SPEC $TCL_LIB_SPEC $TK_LIBS"
+    AC_MSG_NOTICE(*** Tk include spec = $TK_INCLUDE_SPEC)
+    AC_MSG_NOTICE(*** Tk lib spec = $TK_LIB_SPEC)
+    AC_DEFINE(USE_TK, 1)
+else
+    AC_MSG_NOTICE(*** Tk support disabled)
+    AC_DEFINE(USE_TK, 0)
+fi
+
+#--------------------------------------- VTK
+
+AC_SUBST(VTK_DIR, "$VTK_DIR")
+AC_SUBST(VTK_CMAKE, "")
+AC_SUBST(VTK_OBJS, "")
+AC_SUBST(VTK_LIBS, "")
+AC_SUBST(VTK_INCLUDE, "")
+AC_SUBST(VTKTCL_C, "")
+AC_ARG_ENABLE(vtk,
+[  --enable-vtk            enable VTK-TCL support
+  --disable-vtk           disable VTK-Tcl support (default)
+  --with-vtk-libdir=DIR   path for VTK-Tcl library (normally not needed)
+  --with-vtk-incdir=DIR   path for VTK-Tcl header file (normally not needed)],,
+  enable_vtk=no)
+if test "$enable_vtk" != no; then
+    AC_MSG_CHECKING([whether we have VTK ])
+    if test "$enable_tk" = no; then enable_vtk="no"; fi
+    if test "$with_float" != "double"; then enable_vtk="no"; fi
+    if ! sh -c "type vtkWrapTclInit" >/dev/null 2>&1; then enable_vtk="no"; fi
+    if ! sh -c "type vtkWrapTcl" >/dev/null 2>&1; then enable_vtk="no"; fi
+fi
+if test "$enable_vtk" != no; then
+    if test "x$with_vtk_libdir" = x; then
+	for d in /usr/lib* /usr/lib*/vtk* /usr/local/lib* /usr/local/lib*/vtk* \
+		 /usr/vtk*/lib* /usr/local/vtk*/lib*; do
+	    if test -r ${d}/libvtkCommon.so -o \
+		    -r ${d}/libvtkCommon.a -o \
+		    -r ${d}/libvtkCommon.dylib -o \
+		    -r ${d}/libvtkCommonCore.so -o \
+		    -r ${d}/libvtkCommonCore.a -o \
+		    -r ${d}/libvtkCommonCore.dylib; then
+		with_vtk_libdir=$d
+		break
+	    fi
+	done
+	unset d
+    fi
+    if test "x$with_vtk_incdir" = "x"; then
+	AC_FIND_HEADER(with_vtk_incdir, , vtk*, vtkTcl)
+    fi
+    if test "x$with_vtk_incdir" = "x" -o "x$with_vtk_libdir" = x; then
+	enable_vtk=no
+    else
+	VTK_VERSION=`grep "#define[ 	]*VTK_VERSION" \
+			$with_vtk_incdir/*.h 2>/dev/null \
+			| sed -e 's/"//g' | awk '{print $3}'`
+	if test -z "$VTK_VERSION"; then VTK_VERSION="0.0.0"; fi
+	VTK_MAJOR_VERSION=`echo $VTK_VERSION | awk -F. '{print $1}'`
+	VTK_MINOR_VERSION=`echo $VTK_VERSION | awk -F. '{print $2}'`
+	VTK_BUILD_VERSION=`echo $VTK_VERSION | awk -F. '{print $3}'`
+    fi
+fi
+if test "$enable_vtk" != no; then
+    AC_MSG_RESULT($VTK_VERSION)
+    VTKTCL_C=""
+    if expr "$VTK_MAJOR_VERSION" "<" "6" >/dev/null; then
+	# vtktcl.c is needed
+	AC_MSG_CHECKING([whether we have ${VTK_DIR}/tcl/vtktcl.c ])
+	for d in /usr/lib*/vtk* /usr/local/lib*/vtk* /opt/vtk*/lib; do
+	    if test -r ${d}/tcl/vtktcl.c; then
+		VTKTCL_C="-DVTKTCL_C=\"\\\"${d}/tcl/vtktcl.c\\\"\""
+		break
+	    fi
+	done
+	if test "x$VTKTCL_C" = "x" -a -r /usr/share/tcl*/vtk/vtktcl.c; then
+	    d="`ls -C1 /usr/share/tcl*/vtk/vtktcl.c`"
+	    VTKTCL_C="-DVTKTCL_C=\"\\\"${d}\\\"\""
+	fi
+	if test "x$VTKTCL_C" != "x"; then
+	    AC_MSG_RESULT($VTKTCL_C)
+	else
+	    VTKTCL_C="-UVTKTCL_C"
+	    AC_MSG_RESULT(no)
+	fi
+    else
+	VTKTCL_C="-UVTKTCL_C"
+	AC_MSG_NOTICE(*** not using vtktcl.c with VTK-6)
+    fi
+fi
+if test "$enable_vtk" == no; then
+    AC_MSG_NOTICE(*** VTK-Tcl support disabled)
+    AC_DEFINE(USE_VTK, 0)
+else
+    VTK_OBJS="vtkPhgData.o vtkPhgDataTCLInit.o vtkPhgDataTCLWrapper.o"
+    if test "$with_vtk_incdir" != "/usr/include" -o \
+	    "$with_vtk_incdir" != "/usr/local/include"; then
+	VTK_INCLUDE="-I$with_vtk_incdir"
+    else
+	VTK_INCLUDE=""
+    fi
+    if test "$with_vtk_libdir" != "/usr/lib" -o \
+	    "$with_vtk_libdir" != "/usr/lib64" -o \
+	    "$with_vtk_libdir" != "/usr/local/lib64" -o \
+	    "$with_vtk_libdir" != "/usr/local/lib"; then
+	VTK_LIBS="-L$with_vtk_libdir"
+    else
+	VTK_LIBS=""
+    fi
+    # Note: "IOLegacy ..." are for VTK-6
+    for i in IO Filtering Common IOLegacy CommonCore CommonDataModel \
+	CommonExecutionModel; do
+	if test -r ${with_vtk_libdir}/libvtk${i}.so -o \
+		-r ${with_vtk_libdir}/libvtk${i}.a -o \
+		-r ${with_vtk_libdir}/libvtk${i}.dylib; then
+	    VTK_LIBS="$VTK_LIBS -lvtk${i}"
+	fi
+    done
+    if test x"$VTKTCL_C" != x; then
+	# Note: "IOLegacy CommonCore" are for VTK-6
+	for i in Hybrid Patented Rendering Imaging Graphics Parallel \
+		 VolumeRendering Widgets Views Infovis Geovis \
+		 IO Filtering Common \
+		 IOLegacy CommonCore; do
+	    if test -r ${with_vtk_libdir}/libvtk${i}TCL.so -o \
+		    -r ${with_vtk_libdir}/libvtk${i}TCL.a -o \
+		    -r ${with_vtk_libdir}/libvtk${i}TCL.dylib; then
+		VTK_LIBS="$VTK_LIBS -lvtk${i}TCL"
+	    fi
+	done
+    fi
+    AC_MSG_NOTICE(*** VTK-Tcl support enabled)
+    AC_MSG_NOTICE(*** VTK-Tcl include dir = $with_vtk_incdir)
+    AC_MSG_NOTICE(*** VTK-Tcl libs dir = $with_vtk_libdir)
+    AC_DEFINE(USE_VTK, 1)
+fi
+
+#--------------------------------------- MPI
+
+AC_LANG(C)
+AC_ARG_ENABLE(mpi,
+[  --enable-mpi            enable MPI support (default)
+  --disable-mpi           disable MPI support
+  --with-mpi-libdir=DIR   path for MPI libraries
+  --with-mpi-incdir=DIR   path for MPI header files
+  --with-mpi-lib=SPEC	  MPI libraries (default '-lmpi' or '-lmpich')],,
+  enable_mpi=yes)
+if test "$enable_mpi" != no; then
+    AC_MSG_CHECKING([whether we can include MPI headers ])
+    if test "x$with_mpi_incdir" != x; then
+	with_mpi_incdir="-I$with_mpi_incdir"
+    fi
+
+    for pass in 0 1; do
+	if test $pass = 1 -a "x$with_mpi_incdir" = x; then
+	    for d in /usr/include/mpi* /usr/local/mpi*/include \
+		/usr/local/mpi*/include /usr/local/include \
+		/opt/include /opt/mpi*/include /usr/include/mpi*
+	    do
+		if test -r ${d}/mpi.h; then
+		  with_mpi_incdir="-I$d"
+		  break
+		fi
+	    done
+	fi
+	CPPFLAGS_bak="${CPPFLAGS}"
+	CPPFLAGS="$with_mpi_incdir"
+	dnl Note: for MSMPI: make '__int64' available by including stdio.h
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    main() {MPI_Init(0,0); MPI_Finalize();}])],
+		    enable_mpi=yes, enable_mpi=no)
+	CPPFLAGS="${CPPFLAGS_bak}"
+	if test "$enable_mpi" != no -o "x$with_mpi_incdir" != x; then
+	    break
+	fi
+    done
+    AC_MSG_RESULT($enable_mpi)
+fi
+
+if test "$enable_mpi" != no; then
+    CPPFLAGS_bak="${CPPFLAGS}"
+    if test "x$with_mpi_incdir" != x; then
+	AC_MSG_NOTICE(*** MPI include dir = $with_mpi_incdir)
+	CPPFLAGS="$CPPFLAGS $with_mpi_incdir"
+    fi
+    AC_MSG_CHECKING([whether we can link with MPI libraries ])
+    if test "x$with_mpi_libdir" != x; then
+	with_mpi_libdir="-L$with_mpi_libdir"
+    fi
+    for pass in 0 1; do
+	if test $pass = 1 -a "x$with_mpi_libdir" = x; then
+	    for d in /usr/lib*/mpi* /usr/lib*/mpi*/lib \
+		/usr/local/mpi*/lib /usr/local/lib /usr/lib \
+		/opt/lib /opt/mpi*/lib
+	    do
+		if test -r ${d}/libmpi.a -o -r ${d}/libmpich.a; then
+		    #if test "$d" != /usr/lib; then with_mpi_libdir="-L$d"; fi
+		    with_mpi_libdir="-L$d"
+		    break
+		fi
+	    done
+	fi
+	LIBS_bak="${LIBS}"
+	for mpi_lib in "$with_mpi_lib" "-lmpi" "-lmpich" "-lmpich -lpmpich"; do
+	    LIBS="$with_mpi_libdir $mpi_lib"
+	    dnl Note: for MSMPI: make '__int64' available by including stdio.h
+	    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    main() {MPI_Init(0,0); MPI_Finalize();}])],
+		   [enable_mpi=yes; with_mpi_lib=$mpi_lib],enable_mpi=no)
+	    if test "$enable_mpi" != no -o "x$with_mpi_lib" != x; then
+		break
+	    fi
+	done
+	LIBS="${LIBS_bak}"
+	if test "$enable_mpi" != no -o "x$with_mpi_libdir" != x; then
+	    break
+	fi
+    done
+    CPPFLAGS="${CPPFLAGS_bak}"
+    AC_MSG_RESULT($enable_mpi)
+fi
+
+if test "$enable_mpi" != no; then
+    AC_MSG_NOTICE(*** MPI support enabled)
+    if test "x$with_mpi_incdir" != x; then
+	AC_MSG_NOTICE(*** MPI include dir = $with_mpi_incdir)
+	AC_ADD_FLAGS(CPPFLAGS, $with_mpi_incdir)
+    fi
+    if test "x$with_mpi_libdir" != x; then
+	AC_MSG_NOTICE(*** MPI lib dir = $with_mpi_libdir)
+	AC_ADD_FLAGS(LDFLAGS, $with_mpi_libdir)
+    fi
+    if test "x$with_mpi_lib" != x; then
+	AC_MSG_NOTICE(*** MPI lib = $with_mpi_lib)
+	AC_ADD_LIBS(LIBS, $with_mpi_lib)
+    fi
+    AC_DEFINE(USE_MPI, 1)
+    TEST="test"
+else
+    AC_MSG_NOTICE(*** MPI support disabled)
+    AC_DEFINE(USE_MPI, 0)
+    enable_mpiio=no
+fi
+
+#--------------------------------------- MPI I/O
+
+AC_LANG(C)
+AC_ARG_ENABLE(mpiio,
+[  --enable-mpiio          enable MPI I/O
+  --disable-mpiio         disable MPI I/O (default)],,enable_mpiio=yes)
+if test "$enable_mpi" = no; then enable_mpiio=no; fi
+if test "$enable_mpiio" != no; then
+    AC_MSG_CHECKING([whether we have MPI I/O functions ])
+    dnl Note: for MSMPI: make '__int64' available by including stdio.h
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+	#include <mpi.h>
+	main(){MPI_File_set_view(0,0,0,0,0,0);}])],
+	enable_mpiio=yes,enable_mpiio=no)
+    AC_MSG_RESULT($enable_mpiio)
+fi
+if test "$enable_mpiio" != no; then
+    AC_MSG_NOTICE(*** MPI I/O enabled)
+    AC_DEFINE(USE_MPIIO, 1)
+else
+    AC_MSG_NOTICE(*** MPI I/O disabled)
+    AC_DEFINE(USE_MPIIO, 0)
+fi
+
+AC_SUBST(USE_BLAS, 0)
+AC_SUBST(USE_LAPACK, 0)
+AC_SUBST(BLAS_INT, [int])
+AC_SUBST(SIZEOF_BLAS_INT, [$ac_cv_sizeof_int])
+
+#--------------------------------------- Solvers and eigen solvers
+
+AC_ARG_ENABLE(solver,
+[  --enable-solver         enable solvers (default)
+  --disable-solver        disable solvers],,enable_solver=yes)
+
+AC_ARG_ENABLE(eigen_solver,
+[  --enable-eigen-solver   enable eigen solvers (default)
+  --disable-eigen-solver  disable eigen solvers],,enable_eigen_solver=yes)
+
+#--------------------------------------- PETSc
+
+AC_LANG(C)
+AC_ARG_ENABLE(petsc,
+[  --enable-petsc          enable PETSc solver
+  --disable-petsc         disable PETSc solver],,enable_petsc=auto)
+###if test "$with_float" != "double"; then enable_petsc="no"; fi
+if test "$enable_petsc" = auto; then
+    enable_petsc=yes;
+fi
+if test "$enable_solver" = no; then enable_petsc=no; fi
+if test "$enable_mpi" = no; then enable_petsc=no; fi
+#if test -n "$PETSC_DIR"; then
+#    if test "$enable_petsc" = auto; then
+#	enable_petsc=yes
+#    fi
+#else
+#    if test "$enable_petsc" = yes; then
+#	AC_MSG_NOTICE(*** --enable-petsc specified but PETSC_DIR is not set!)
+#    fi
+#    enable_petsc=no
+#fi
+if test "$enable_petsc" != no; then
+    AC_READLINK(PETSC_DIR)
+    export PETSC_DIR
+    petsc_configs="./petsc-configs.sh"
+    if ! sh "$petsc_configs"; then
+	enable_petsc=no
+    else
+	LIBS_bak="$LIBS"
+	LDFLAGS_bak="$LDFLAGS"
+	CPPFLAGS_bak="$CPPFLAGS"
+	AC_ADD_LIBS(LIBS, `sh "$petsc_configs" LIBS RPATHS`)
+	AC_ADD_FLAGS(LDFLAGS, `sh "$petsc_configs" LDFLAGS`)
+	AC_ADD_FLAGS(CPPFLAGS, `sh "$petsc_configs" CPPFLAGS`)
+	# try linking a test code
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <petscksp.h>
+#if (PETSC_VERSION_MAJOR==3 && PETSC_VERSION_MINOR>=3) || PETSC_VERSION_MAJOR>3
+# define MatCreateMPIAIJ MatCreateAIJ
+#endif
+	    main(){
+		PetscInitialize(0, 0, 0, 0);
+		MatCreateMPIAIJ(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	    }])], enable_petsc=yes, enable_petsc=no)
+	if test "$enable_petsc" = "no"; then
+	    LIBS="$LIBS_bak"
+	    LDFLAGS="$LDFLAGS_bak"
+	    CPPFLAGS="$CPPFLAGS_bak"
+	fi
+    fi
+fi
+if test "$enable_petsc" != no; then
+    if test -n "${PETSC_DIR}"; then
+	petsc_dir=" (${PETSC_DIR})"
+    else
+	petsc_dir=""
+    fi
+    AC_MSG_NOTICE(*** PETSc solver enabled${petsc_dir})
+    AC_DEFINE(USE_PETSC, 1)
+    # USE_PETSC implies USE_BLAS and USE_LAPACK
+    AC_DEFINE(USE_BLAS, 1)
+    AC_DEFINE(USE_LAPACK, 1)
+    blas_ok="yes"
+    lapack_ok="yes"
+else
+    AC_MSG_NOTICE(*** PETSc solver disabled)
+    AC_DEFINE(USE_PETSC, 0)
+fi
+
+#--------------------------------------- PARDISO
+
+AC_LANG(C)
+AC_ARG_ENABLE(pardiso,
+[  --enable-pardiso        enable PARDISO solver
+  --disable-pardiso       disable PARDISO solver (default)
+  --with-pardiso=LIB      PARDISO libraries],,enable_pardiso=no)
+if test "$enable_solver" = no; then enable_pardiso=no; fi
+if test "$enable_pardiso" != "no"; then
+    AC_MSG_CHECKING([whether we have PARDISO ])
+    if test -n "$with_pardiso"; then
+	dirs="void"
+    else
+	if test -d /opt/intel/mkl/lib; then
+	    dirs="void `ls -dr /opt/intel/mkl/lib/* 2>/dev/null`"
+	else
+	    dirs="void `ls -dr /opt/intel/mkl/*/lib/* 2>/dev/null`"
+	fi
+    fi
+    for l in "$with_pardiso" "-lmkl_solver" \
+		"-lmkl_solver -lmkl $MKL_GUIDE -lpthread" \
+		"-lmkl_solver $MKL_RT" \
+		"-lmkl_solver_lp64 -lmkl $MKL_GUIDE -lpthread" \
+		"-lmkl_solver_lp64 $MKL_RT"; do
+	if test -z "$l"; then continue; fi
+	LIBS_bak="$LIBS"
+	AC_ADD_LIBS(LIBS, $l)
+	for d in $dirs; do
+	    LDFLAGS_bak="$LDFLAGS"
+	    if test "$d" = "void"; then d=""; fi
+	    if test -n "$d"; then
+		if ! test -d "$d"; then continue; fi
+		d="-L$d"
+		AC_ADD_FLAGS(LDFLAGS, $d)
+	    fi
+	    AC_LINK_IFELSE([AC_LANG_SOURCE([main(){$PARDISO(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);}])], enable_pardiso=yes, enable_pardiso=no)
+	    if test "$enable_pardiso" != "no"; then
+		AC_DEFINE(USE_PARDISO, 1)
+		AC_DEFINE(USE_BLAS, 1)
+		break
+	    fi
+	    LDFLAGS="$LDFLAGS_bak"
+	done
+	if test "$enable_pardiso" != "no"; then
+	    break
+	else
+	    LIBS="$LIBS_bak"
+	fi
+	if test "$l" = "$with_pardiso"; then break; fi
+    done
+    AC_MSG_RESULT($enable_pardiso)
+fi
+
+#--------------------------------------- user designated BLAS/LAPACK
+
+AC_LANG(C)
+AC_ARG_WITH(blas, [  --with-blas=LIB         BLAS lib], [
+    AC_MSG_CHECKING([BLAS ])
+    AC_ADD_LIBS(LIBS, $with_blas)
+    AC_CHECK_FORTRAN([AC_LANG_SOURCE([main(){$DGEMM();}])], blas)
+    if test "$blas_ok" != "yes"; then
+	AC_MSG_ERROR(can not link with BLAS lib "$with_blas")
+    fi
+    AC_MSG_RESULT([ok])
+    AC_DEFINE(USE_BLAS, 1)
+],)
+
+AC_LANG(C)
+AC_ARG_WITH(blas-int, [
+  --with-blas-int=type    the integer type in BLAS and LAPACK (default int)],,)
+if test -z "$with_blas_int"; then with_blas_int="int"; fi
+AC_DEFINE_UNQUOTED(BLAS_INT, $with_blas_int)
+if test "$with_blas_int" = "short"; then
+    AC_DEFINE_UNQUOTED(SIZEOF_BLAS_INT, $ac_cv_sizeof_short)
+elif test "$with_blas_int" = "int"; then
+    AC_DEFINE_UNQUOTED(SIZEOF_BLAS_INT, $ac_cv_sizeof_int)
+elif test "$with_blas_int" = "long"; then
+    AC_DEFINE_UNQUOTED(SIZEOF_BLAS_INT, $ac_cv_sizeof_long)
+elif test "$with_blas_int" = "long long"; then
+    AC_DEFINE_UNQUOTED(SIZEOF_BLAS_INT, $ac_cv_sizeof_long_long)
+else
+    AC_MSG_ERROR(invalid argument "$with_blas_int" for "--with-blas-int"!)
+fi
+
+AC_ARG_WITH(lapack, [  --with-lapack=LIB       LAPACK lib], [
+    AC_MSG_CHECKING([LAPACK ])
+    AC_ADD_LIBS(LIBS, $with_lapack)
+    AC_CHECK_FORTRAN([AC_LANG_SOURCE([main(){$DGELS();}])], lapack)
+    if test "$lapack_ok" != "yes"; then
+	AC_MSG_ERROR(can not link with LAPACK lib "$with_lapack")
+    fi
+    AC_MSG_RESULT([ok])
+    AC_DEFINE(USE_BLAS, 1)
+    AC_DEFINE(USE_LAPACK, 1)
+],)
+
+#--------------------------------------- BLAS/LAPACK again
+# Note: the tests are placed here after PETSc since normally BLAS/LAPACK
+#	libs are included in PETSc libs
+
+# Check MKL
+if test "$lapack_ok" != "yes"; then
+    AC_MSG_CHECKING([for BLAS/LAPACK libs ])
+    LIBS_bak="$LIBS"
+    LDFLAGS_bak="$LDFLAGS"
+    if test -d /opt/intel/mkl/lib; then
+	dirs="`ls -dr /opt/intel/mkl/lib/* 2>/dev/null`"
+	libs="$MKL_RT"
+    else
+	dirs="`ls -dr /opt/intel/mkl/*/lib/{32,64,em64t} 2>/dev/null`"
+	libs="-lmkl $MKL_GUIDE -lpthread"
+    fi
+    for d in "" $dirs; do
+      if test -n "$d"; then
+	  if ! test -d "$d"; then continue; fi
+	  d="-L$d"
+	  AC_ADD_FLAGS(LDFLAGS, $d)
+      fi
+      for l in "lapack" "lapack95" "lapack95_lp64"; do
+	AC_ADD_LIBS(LIBS, "-lmkl_$l $libs")
+	AC_CHECK_FORTRAN([AC_LANG_SOURCE([main(){$DGELS();}])], lapack)
+	if test "$lapack_ok" = "yes"; then
+	    AC_MSG_RESULT($d -lmkl_$l $libs)
+	    AC_DEFINE(USE_BLAS, 1)
+	    AC_DEFINE(USE_LAPACK, 1)
+	    break
+	fi
+	LIBS="$LIBS_bak"
+      done
+      test "$lapack_ok" = "yes" && break
+      LDFLAGS="$LDFLAGS_bak"
+    done
+fi
+
+if test "$lapack_ok" != "yes"; then
+    # Try to guess other BLAS/LAPACK libs
+    for with_lapack in "" "-llapack -lgoto" "-llapack -lblas" "-lscs"; do
+	LIBS_bak="$LIBS"
+	if test -n "$with_lapack"; then
+	    AC_ADD_LIBS(LIBS, $with_lapack)
+	fi
+	AC_CHECK_FORTRAN([AC_LANG_SOURCE([main(){$DGELS();}])], lapack)
+	if test "$lapack_ok" = "yes"; then
+	    if test -z "$with_lapack"; then
+		AC_MSG_RESULT([not needed])
+	    else
+		AC_MSG_RESULT($with_lapack)
+	    fi
+	    AC_DEFINE(USE_BLAS, 1)
+	    AC_DEFINE(USE_LAPACK, 1)
+	    break
+	fi
+	LIBS="$LIBS_bak"
+    done
+    if test "$lapack_ok" != "yes"; then
+	AC_MSG_RESULT(not found)
+	AC_MSG_NOTICE(******************************************************)
+	AC_MSG_NOTICE(***** WARNING: cannot determine BLAS/LAPACK libs *****)
+	AC_MSG_NOTICE(******************************************************)
+    fi
+fi
+
+#--------------------------------------- basic flags
+
+# Note: -I`pwd`/include and -L`pwd`/src must be the first term in CPPFLAGS
+# and LDFLAGS respectively, which will be changed to PHG_INSTDIR/include by
+# 'make install'
+CPPFLAGS="-I${PHG_DIR}/include $CPPFLAGS"
+
+#--------------------------------------- METIS/ParMETIS
+
+AC_LANG(C)
+AC_ARG_ENABLE(metis,
+[  --enable-metis          enable METIS support (default)
+  --disable-metis         disable METIS support
+  --with-metis-lib=LIB    METIS libraries
+  --with-metis-incdir=DIR path for METIS header file],,enable_metis=yes)
+if test "$enable_metis" != "no"; then
+    AC_MSG_CHECKING([whether we have METIS ])
+    AC_FIND_HEADER(with_metis_incdir, $with_parmetis_incdir, *metis*, metis)
+    # check for METIS <= 4.0
+    AC_FIND_LIB(metis, , *metis*, metis, [AC_LANG_SOURCE([#include <metis.h>
+		main() {idxtype i; METIS_PartMeshDual(0,0,0,0,0,0,0,0,0);}])])
+    if test "$enable_metis" = "no"; then
+	# check for METIS >= 5.0
+	# Note: libmetis (only) needs the gk_log2() function in libGKlib
+	AC_FIND_LIB(GKlib, , *metis*, GKlib, [AC_LANG_SOURCE([#include <metis.h>
+	    main() {gk_log2(0);}])])
+	dnl if test "$enable_GKlib" != "no"; then
+	AC_FIND_LIB(metis, , *metis*, metis, [AC_LANG_SOURCE([#include <metis.h>
+	    main() {idx_t i; METIS_PartMeshDual(0,0,0,0,0,0,0,0,0,0,0,0,0);}])])
+	dnl fi
+    fi
+    AC_MSG_RESULT($enable_metis)
+fi
+if test "$enable_metis" != "no"; then
+    AC_MSG_NOTICE(*** METIS support enabled)
+    AC_MSG_NOTICE(*** METIS include dir = $with_metis_incdir)
+    AC_MSG_NOTICE(*** METIS libs = $with_metis_lib)
+    AC_DEFINE(USE_METIS, 1)
+else
+    AC_MSG_NOTICE(*** METIS support disabled)
+    AC_DEFINE(USE_METIS, 0)
+fi
+
+AC_LANG(C)
+AC_ARG_ENABLE(parmetis,
+[  --enable-parmetis       enable ParMETIS support (default)
+  --disable-parmetis      disable ParMETIS support
+  --with-parmetis-lib=LIB ParMETIS libraries
+  --with-parmetis-incdir=DIR path for ParMETIS header file],,enable_parmetis=yes)
+if test "$enable_mpi" = "no"; then enable_parmetis="no"; fi
+if test "$enable_parmetis" != "no"; then
+    AC_MSG_CHECKING([whether we have ParMETIS ])
+    if test "$enable_metis" = "no"; then
+	# hacky: append --with-metis-lib to --with-parmetis-lib
+	if test -z "$with_metis_lib"; then
+	    with_metis_lib="-lmetis"
+	fi
+	if test -z "$with_parmetis_lib"; then
+	    with_parmetis_lib="-lparmetis $with_metis_lib"
+	elif test "$with_metis_lib" != "$with_parmetis_lib"; then
+	    with_parmetis_lib="$with_parmetis_lib $with_metis_lib"
+	fi
+    fi
+    AC_FIND_HEADER(with_parmetis_incdir,$with_metis_incdir,*metis*,parmetis)
+    AC_FIND_LIB(parmetis, , *metis*, parmetis,
+	[AC_LANG_SOURCE([#include <parmetis.h>
+		main(){ParMETIS_V3_AdaptiveRepart(0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0);}])])
+    AC_MSG_RESULT($enable_parmetis)
+fi
+if test "$enable_parmetis" != "no"; then
+    AC_MSG_NOTICE(*** ParMETIS support enabled)
+    AC_MSG_NOTICE(*** ParMETIS include dir = $with_parmetis_incdir)
+    AC_MSG_NOTICE(*** ParMETIS libs = $with_parmetis_lib)
+    AC_DEFINE(USE_PARMETIS, 1)
+else
+    # check the libPTScotchMeTiS compatibility library
+    LIBS_bak="$LIBS"
+    AC_ADD_LIBS(LIBS, -lptscotchparmetis)
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <parmetis.h>
+	    main(){ParMETIS_V3_PartKway(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);}])],
+	    enable_parmetis="yes", enable_parmetis="no")
+    if test "$enable_parmetis" != "no"; then
+	AC_MSG_NOTICE(*** ParMETIS support enabled (using PTScotch compatibility library))
+	AC_MSG_NOTICE(*** ParMETIS libs = -lptscotchparmetis)
+	AC_DEFINE(USE_PARMETIS, 1)
+    else
+	LIBS=${LIBS_bak}
+	AC_MSG_NOTICE(*** ParMETIS support disabled)
+	AC_DEFINE(USE_PARMETIS, 0)
+    fi
+fi
+
+#--------------------------------------- HYPRE
+
+AC_LANG(C)
+AC_ARG_ENABLE(hypre,
+[  --enable-hypre          enable hypre solver (default)
+  --disable-hypre         disable hypre solver
+  --with-hypre-dir        hypre installation dir
+  --with-hypre-libs       hypre libs (default -lHYPRE)],,enable_hypre=yes)
+if test "$enable_solver" = no; then enable_hypre=no; fi
+if test "$enable_mpi" = no; then enable_hypre=no; fi
+if test -z "$with_hypre_dir" -a "$enable_hypre" != no; then
+    for d in /usr/local/hypre /usr/hypre /opt/hypre /opt/local/hypre /opt/local
+    do
+	if test -r ${d}/include/HYPRE.h; then
+	    with_hypre_dir="$d"
+	    break
+	fi
+    done
+    if test -z "$with_hypre_dir"; then
+	enable_hypre="no"
+    fi
+fi
+if test "$enable_hypre" != no; then
+    AC_MSG_CHECKING([whether we have HYPRE ])
+    hypre_rpath=no
+    CPPFLAGS_bak="$CPPFLAGS"
+    LDFLAGS_bak="$LDFLAGS"
+    LIBS_bak="${LIBS}"
+    if test -n "$with_hypre_dir"; then
+	CPPFLAGS="$CPPFLAGS -I${with_hypre_dir}/include"
+	LDFLAGS="$LDFLAGS -L${with_hypre_dir}/lib"
+    fi
+    # Note: HYPRE libs might be provided by PETSc
+    with_hypre_libs1=""
+    if test -z "$with_hypre_libs"; then
+	with_hypre_libs="-lHYPRE"
+	# for older versions of hypre
+	hypre_libs="`echo ' \
+			-lHYPRE_parcsr_ls \
+			-lHYPRE_DistributedMatrixPilutSolver \
+			-lHYPRE_ParaSails \
+			-lHYPRE_Euclid \
+			-lHYPRE_MatrixMatrix \
+			-lHYPRE_DistributedMatrix \
+			-lHYPRE_IJ_mv \
+			-lHYPRE_parcsr_mv \
+			-lHYPRE_seq_mv'`"
+	hypre_libs1="-lHYPRE_krylov -lHYPRE_utilities"
+	hypre_libs2="-lkrylov -lHYPRE_utilities"
+    fi
+    for hypre_libs in "" "$with_hypre_libs" "$with_hypre_libs -lstdc++" \
+			 "$hypre_libs $hypre_libs1" \
+			 "$hypre_libs $hypre_libs1 -lstdc++" \
+			 "$hypre_libs $hypre_libs2" \
+			 "$hypre_libs $hypre_libs2 -lstdc++"; do
+	LIBS="$hypre_libs $LIBS"
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+	    #include <mpi.h>
+	    #include "HYPRE_parcsr_ls.h"
+	    main(){HYPRE_BoomerAMGSolve(0, 0, 0, 0);}])],
+	    enable_hypre="yes"
+	    if ldd conftest 2>/dev/null | grep -q 'libHYPRE.*\.so'; then
+		hypre_rpath="yes"
+	    fi,
+	    enable_hypre=no)
+	LIBS="${LIBS_bak}"
+	if test $enable_hypre != "no"; then
+	    break
+	fi
+    done
+    CPPFLAGS="${CPPFLAGS_bak}"
+    LDFLAGS="${LDFLAGS_bak}"
+    if test "$enable_hypre" = "no"; then
+	AC_MSG_RESULT([$enable_hypre (missing BLAS/LAPACK?)])
+    else
+	AC_MSG_RESULT([$enable_hypre])
+    fi
+fi
+if test "$enable_hypre" != no; then
+    AC_READLINK(with_hypre_dir)
+    AC_MSG_NOTICE(*** HYPRE solver enabled ($with_hypre_dir))
+    AC_ADD_FLAGS(CPPFLAGS, -I${with_hypre_dir}/include)
+    AC_ADD_FLAGS(LDFLAGS, -L${with_hypre_dir}/lib)
+    AC_ADD_LIBS(LIBS, $hypre_libs)
+    if test "$enable_rpath" = "yes" -a "$hypre_rpath" = "yes"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}${with_hypre_dir}/lib")
+    fi
+    AC_DEFINE(USE_HYPRE, 1)
+    hypre_include="${with_hypre_dir}/include"
+else
+    # HYPRE may already be available (e.g., required by PETSc)
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+	#include <mpi.h>
+	#include "HYPRE_parcsr_ls.h"
+	main(){HYPRE_BoomerAMGSolve(0, 0, 0, 0);}])],
+	enable_hypre="yes", enable_hypre="no")
+    if test "$enable_hypre" != "no"; then
+	hypre_include="${MPI_INCLUDE}/hypre"
+	AC_MSG_NOTICE(*** HYPRE solver enabled)
+	AC_DEFINE(USE_HYPRE, 1)
+    else
+	AC_MSG_NOTICE(*** HYPRE solver disabled)
+	AC_DEFINE(USE_HYPRE, 0)
+    fi
+fi
+# determine HYPRE version
+if test "$enable_hypre" != "no"; then
+    AC_MSG_CHECKING([HYPRE version (1.6.0 or higher required) ])
+    tmp=`grep HYPRE_PACKAGE_VERSION ${hypre_include}/HYPRE_config.h \
+		2>/dev/null | awk -F\" '{print $2}'`
+    if test -z "$tmp"; then
+      tmp=`grep HYPRE_RELEASE_VERSION ${hypre_include}/HYPRE_config.h \
+		2>/dev/null | awk -F\" '{print $2}'`
+    fi
+    if test -n "$tmp"; then
+	AC_MSG_RESULT([$tmp])
+	hypre_major="`echo $tmp | awk -F. '{print $1}'`"
+	hypre_minor="`echo $tmp | awk -F. '{print $2}'`"
+	unset tmp
+    else
+	AC_MSG_RESULT([unknown])
+	hypre_major="0"
+	hypre_minor="0"
+    fi
+    AC_DEFINE_UNQUOTED(HYPRE_VERSION_MAJOR, $hypre_major)
+    AC_DEFINE_UNQUOTED(HYPRE_VERSION_MINOR, $hypre_minor)
+fi
+
+#--------------------------------------- Trilinos
+
+AC_LANG(C++)
+AC_ARG_ENABLE(trilinos,
+[  --enable-trilinos       enable Trilinos solver (default)
+  --disable-trilinos      disable Trilinos solver
+  --with-trilinos-dir=DIR Trilinos installation directory],
+  ,enable_trilinos=yes)
+if test "$enable_solver" = no; then enable_trilinos=no; fi
+if test "$enable_mpi" = no; then enable_trilinos=no; fi
+if test -z "$with_trilinos_dir" -a "$enable_trilinos" != no; then
+    for d in /usr/local/trilinos /usr/trilinos /opt/trilinos \
+	    /opt/local/trilinos /opt/local; do
+	if test -r ${d}/include/Epetra_ConfigDefs.h; then
+	    with_trilinos_dir="$d"
+	    break
+	fi
+    done
+    if test -z "$with_trilinos_dir"; then
+	enable_trilinos="no"
+    fi
+fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_trilinos" != no; then
+    AC_MSG_CHECKING([whether we have Trilinos ])
+    AC_READLINK(with_trilinos_dir)
+    if test -n "$with_trilinos_dir"; then
+	AC_ADD_FLAGS(CPPFLAGS, -I$with_trilinos_dir/include)
+	AC_ADD_FLAGS(LDFLAGS, -L$with_trilinos_dir/lib)
+    fi
+    tmp="-laztecoo -lml -lifpack -lepetra -lepetraext -ltriutils"
+    # Libraries for Trilinos >= 11.6.1
+    dnl if test "$enable_shared" != "yes"; then
+	for l in teuchos teuchoscore teuchosnumerics teuchoscomm \
+		 teuchosparameterlist galeri amesos \
+		 thyraepetraext thyraepetra thyra tpetrainout tpetra rtop \
+		 kokkoslinalg kokkosnodeapi kokkos tpi isorropia \
+		 tpetraext thyracore
+	do
+	    if test -r $with_trilinos_dir/lib/lib${l}.a -o \
+		-r $with_trilinos_dir/lib/lib${l}.so; then
+		tmp="$tmp -l$l"
+	    fi
+	done
+    dnl fi
+    if test -r $with_trilinos_dir/lib/libzoltan.a -o \
+	    -r $with_trilinos_dir/lib/libzoltan.so; then
+	tmp="$tmp -lzoltan"
+	TRILINOS_PROVIDES_ZOLTAN=yes
+    else
+	TRILINOS_PROVIDES_ZOLTAN=no
+    fi
+    AC_ADD_LIBS(LIBS, $tmp)
+    dnl
+    dnl TODO: more elaborated checks
+    trilinos_rpath="no"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include "mpi.h"
+		    #include "Epetra_MpiComm.h"
+		    main() {Epetra_MpiComm comm(MPI_COMM_WORLD);}])],
+		   enable_trilinos="yes"
+		   if ldd conftest 2>/dev/null | grep -q 'libepetra\.so'; then
+		      trilinos_rpath="yes"
+		   fi, enable_trilinos="no")
+    AC_MSG_RESULT($enable_trilinos)
+fi
+if test "$enable_trilinos" != no; then
+    AC_MSG_NOTICE(*** Trilinos solver enabled ($with_trilinos_dir))
+    AC_DEFINE(USE_TRILINOS, 1)
+    if test -r $with_trilinos_dir/include/Trilinos_version.h; then
+	AC_DEFINE(HAVE_TRILINOS_VERSION_H, 1)
+    else
+	AC_DEFINE(HAVE_TRILINOS_VERSION_H, 0)
+    fi
+    if test -z "$LINKER"; then
+	LINKER="$CXX"
+    fi
+else
+    TRILINOS_PROVIDES_ZOLTAN=no
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** Trilinos solver disabled)
+    AC_DEFINE(USE_TRILINOS, 0)
+fi
+
+#--------------------------------------- Trilinos Anasazi
+
+AC_LANG(C++)
+AC_ARG_ENABLE(trilinos-anasazi,
+[  --enable-trilinos-anasazi enable Trilinos Anasazi eigen solver (default)
+  --disable-trilinos-anasazi disable Trilinos Anasazi eigen solver],,
+  enable_trilinos_anasazi=yes)
+if test "$enable_trilinos" = "no" -o "$enable_eigen_solver" = "no"; then
+    enable_trilinos_anasazi="no"
+else
+    if test "$with_float" = "__float128"; then
+	AC_MSG_NOTICE(*** note: Anasazi currently does not work with __float128)
+	enable_trilinos_anasazi="no"
+    fi
+fi
+if test "$enable_trilinos_anasazi" != no; then
+    AC_MSG_NOTICE(*** Trilinos Anasazi eigen solver enabled)
+    AC_ADD_LIBS(LIBS, "-lanasazi")
+    AC_DEFINE(USE_TRILINOS_ANASAZI, 1)
+else
+    AC_MSG_NOTICE(*** Trilinos Anasazi eigen solver disabled)
+    AC_DEFINE(USE_TRILINOS_ANASAZI, 0)
+fi
+
+#--------------------------------------- rpath for Trilinos libs
+
+if test "$enable_trilinos" != "no" -a "$enable_rpath" = "yes" -a \
+	"$trilinos_rpath" = "yes" -a -n "$with_trilinos_dir"; then
+    AC_ADD_LIBS(LIBS, "${with_rpath_flag}${with_trilinos_dir}/lib")
+fi
+
+#--------------------------------------- Zoltan
+
+AC_LANG(C)
+AC_ARG_ENABLE(zoltan,
+[  --enable-zoltan         enable Zoltan partitioners (default)
+  --disable-zoltan        disable Zoltan partitioners
+  --with-zoltan-incdir=DIR Zoltan header files directory
+  --with-zoltan-libdir=DIR Zoltan libraries directory],,enable_zoltan=yes)
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_mpi" != yes; then enable_zoltan="no"; fi
+if test "$enable_zoltan" != no; then
+    AC_MSG_CHECKING([whether we have Zoltan])
+    if test "$TRILINOS_PROVIDES_ZOLTAN" != "yes"; then
+	AC_ADD_LIBS(LIBS, "-lzoltan")
+    fi
+    if test -n "$with_zoltan_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, "-I$with_zoltan_incdir")
+    fi
+    if test -n "$with_zoltan_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, "-L$with_zoltan_libdir")
+    fi
+    zoltan_rpath="no"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <zoltan.h>
+	main(){Zoltan_Set_Param(0,0,0);}])],
+	enable_zoltan="yes"
+	if ldd conftest 2>/dev/null | grep -q 'libzoltan\.so'; then
+	    zoltan_rpath="yes"
+	fi, enable_zoltan="no")
+    AC_MSG_RESULT($enable_zoltan)
+fi
+if test "$enable_zoltan" != no; then
+    AC_MSG_NOTICE(*** Zoltan partitioners enabled)
+    AC_DEFINE(USE_ZOLTAN, 1)
+    # Add rpath flag when using shared library
+    if test "$enable_rpath" = "yes" -a "$zoltan_rpath" = "yes" -a \
+	    -n "$with_zoltan_libdir"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}$with_zoltan_libdir")
+    fi
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** Zoltan partitioners disabled)
+    AC_DEFINE(USE_ZOLTAN, 0)
+fi
+
+#--------------------------------------- SuperLU_DIST
+
+#
+# Note: SuperLU_DIST should come after METIS/ParMETIS
+#
+
+AC_LANG(C)
+AC_ARG_ENABLE(superlu,
+[  --enable-superlu        enable SuperLU_DIST solver (default)
+  --disable-superlu       disable SuperLU_DIST solver
+  --with-superlu-incdir=DIR path of SuperLU_DIST header files
+  --with-superlu-lib=LIB  SuperLU_DIST libraries],,enable_superlu=yes)
+if test "$enable_solver" = "no"; then enable_superlu=no; fi
+if test "$enable_mpi" = "no"; then enable_superlu=no; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_superlu" != "no"; then
+    AC_MSG_CHECKING([whether we have SuperLU_DIST ])
+    AC_FIND_HEADER(with_superlu_incdir, , [[[Ss]]uper*], superlu_ddefs)
+    AC_FIND_LIB(superlu, , [[[Ss]]uper*],
+		[superlu_dist superlu_dist_3.3],
+	[AC_LANG_SOURCE([#include <superlu_ddefs.h>
+	main(){dCreate_CompRowLoc_Matrix_dist(0,0,0,0,0,0,0,0,0,0,0,0);}])]);
+    AC_MSG_RESULT($enable_superlu)
+fi
+dnl if test "$enable_superlu" != "no"; then
+dnl     dnl check for Fortran libs which is required by SuperLU_Dist
+dnl     AC_MSG_CHECKING([whether we can call $MC64AD ])
+dnl     AC_CHECK_FORTRAN([AC_LANG_SOURCE([main(){$MC64AD();}])],superlu)
+dnl     AC_MSG_RESULT($superlu_ok)
+dnl     if test "$superlu_ok" != "yes"; then
+dnl 	enable_superlu="no"
+dnl     fi
+dnl fi
+if test "$enable_superlu" != "no"; then
+    AC_MSG_NOTICE(*** SuperLU_DIST solver enabled)
+    AC_MSG_NOTICE(*** SuperLU_DIST include dir = $with_superlu_incdir)
+    AC_MSG_NOTICE(*** SuperLU_DIST libs = $with_superlu_lib)
+    AC_DEFINE(USE_SUPERLU, 1)
+
+    # Checking SuperLU_DIST version
+    AC_MSG_CHECKING([SuperLU_Dist version ])
+    # Note: Ublock_info_t is a newly added struct in SuperLU_DIST 4.0
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([#include <superlu_ddefs.h>
+		    main(){Ublock_info_t a; a.jb = 0;}])],
+		    superlu_version="4",superlu_version="3")
+    if test "$superlu_version" = "4"; then
+	# Checking for SuperLU_DIST >= 5.0
+	# Note: 'superlu_options_t' renamed to 'superlu_dist_options_t' in 5.0
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([#include <superlu_ddefs.h>
+		    main(){superlu_dist_options_t t; t.PrintStat = YES;}])],
+		    superlu_version="5",superlu_version="4")
+	if test "$superlu_version" = "5"; then
+	    AC_MSG_RESULT(>= 5)
+	    AC_DEFINE(SUPERLU_VERSION_MAJOR, 5)
+	else
+	    AC_MSG_RESULT(= 4)
+	    AC_DEFINE(SUPERLU_VERSION_MAJOR, 4)
+	fi
+    else
+	AC_MSG_RESULT(<= 3)
+	AC_DEFINE(SUPERLU_VERSION_MAJOR, 3)
+    fi
+
+    if test "$superlu_version" = "3"; then
+	AC_MSG_CHECKING([whether SuperLU_DIST supports parallel symbolic factorization ])
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <superlu_ddefs.h>
+			main(){
+			    superlu_options_t options;
+			    options.ParSymbFact = YES;
+			}])],
+			superlu_parsymbfact="yes", superlu_parsymbfact="no")
+	AC_MSG_RESULT($superlu_parsymbfact)
+	if test "$superlu_parsymbfact" != "no"; then
+	    AC_DEFINE(USE_SUPERLU_PARSYMBFACT, 1)
+	else
+	    AC_DEFINE(USE_SUPERLU_PARSYMBFACT, 0)
+	fi
+    else
+	AC_DEFINE(USE_SUPERLU_PARSYMBFACT, 1)
+    fi
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** SuperLU_DIST solver disabled)
+    AC_DEFINE(USE_SUPERLU, 0)
+fi
+
+#--------------------------------------- ScaLAPACK/BLACS
+AC_LANG(C)
+AC_ARG_ENABLE(scalapack,
+[  --enable-scalapack      enable ScaLAPACK (default)
+  --disable-scalapack     disable ScaLAPACK
+  --with-scalapack-lib=LIB ScaLAPACK/BLACS libraries (e.g.: '-lscalapack -lblacs -lblacsF77init -lblacs' or '-lmkl_scalapack -lmkl_blacs')],,enable_scalapack=yes)
+if test "$enable_mpi" = no; then enable_scalapack=no; fi
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_scalapack" != no; then
+    AC_MSG_CHECKING([whether we have BLACS/ScaLAPACK ])
+    for temp in "$with_scalapack_lib" \
+		"-lscalapack" \
+		"-lscalapack -lblacs -lblacsF77init -lblacs" \
+		"-lmkl_scalapack -lmkl_blacs_intelmpi" \
+		"-lmkl_scalapack -lmkl_blacs_openmpi" \
+		"-lmkl_scalapack_core -lmkl_blacs_intelmpi" \
+		"-lmkl_scalapack_core -lmkl_blacs_openmpi" \
+		"-lmkl_scalapack_lp64 -lmkl_blacs_intelmpi_lp64" \
+		"-lmkl_scalapack_lp64 -lmkl_blacs_openmpi_lp64"; do
+	LIBS="$LIBS_bak"
+	if test -n "$temp"; then
+	    AC_ADD_LIBS(LIBS, $temp)
+	fi
+	dnl Note: pdsygvx_ requires 34 arguments
+	AC_LINK_IFELSE([AC_LANG_SOURCE([main(){$PDSYGVX();}])],
+		   enable_scalapack=yes, enable_scalapack=no)
+	if test "$enable_scalapack" != "no"; then break; fi
+	if test -n "$temp" -a "$temp" = "$with_scalapack_lib"; then break; fi
+    done
+    AC_MSG_RESULT($enable_scalapack)
+fi
+if test "$enable_scalapack" != no; then
+    AC_MSG_NOTICE(*** ScaLAPACK enabled)
+    AC_DEFINE(USE_SCALAPACK, 1)
+else
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** ScaLAPACK disabled)
+    AC_DEFINE(USE_SCALAPACK, 0)
+fi
+
+#--------------------------------------- MUMPS
+#
+# Note: MUMPS check should come after METIS/ParMETIS
+
+AC_LANG(C)
+AC_ARG_ENABLE(mumps,
+[  --enable-mumps          enable MUMPS solver (default)
+  --disable-mumps         disable MUMPS solver
+  --with-mumps-dir=DIR    MUMPS installation dir
+  --with-mumps-incdir=DIR path for MUMPS header files
+  --with-mumps-libdir=DIR path for MUMPS libraries
+  --with-mumps-optlib=LIB optional libs for MUMPS or 'none' (default '-lesmumps -lscotch -lscotcherrexit -lptesmumps -lptscotch -lptscotcherrexit')
+  --with-mumps-lib=LIB    MUMPS, ScaLAPACK, and BLACS libraries (obsolete)],,
+enable_mumps=yes)
+if test "$enable_mpi" = no; then enable_mumps=no; fi
+if test "$enable_solver" = no; then enable_mumps=no; fi
+if test "$enable_scalapack" = no; then enable_mumps=no; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_mumps" != no; then
+    AC_MSG_CHECKING([whether we have MUMPS ])
+    if test -z "$with_mumps_incdir" -o -z "$with_mumps_libdir"; then
+	if test -z "$with_mumps_dir" -a -d "/usr/local/mumps"; then
+	    with_mumps_dir="/usr/local/mumps"
+	fi
+    fi
+    if test -n "$with_mumps_dir"; then
+	AC_READLINK(with_mumps_dir)
+	if test -z "$with_mumps_incdir" -a \
+		-r "$with_mumps_dir/include/dmumps_c.h"; then
+	    with_mumps_incdir="$with_mumps_dir/include"
+	fi
+	if test -z "$with_mumps_libdir"; then
+	    for d in lib lib64; do
+		if test -r "$with_mumps_dir/${d}/libdmumps.so" -o \
+			-r "$with_mumps_dir/${d}/libdmumps.a"; then
+		    with_mumps_libdir="$with_mumps_dir/${d}"
+		    break
+		fi
+	    done
+	fi
+    fi
+    if test -n "$with_mumps_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, "-I$with_mumps_incdir")
+    fi
+    if test -n "$with_mumps_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, "-L$with_mumps_libdir")
+    fi
+  ##########################################################################
+  for pass in 0 1 2; do
+    LIBS_bak_bak="$LIBS"
+  #-------------------------------------------------------------------------
+    if test -z "$with_mumps_lib"; then
+	if test -z "$with_mumps_optlib"; then
+	    dnl with_mumps_optlib="/usr/local/SCALAPACK/libscalapack.a \
+	    dnl 	     /usr/local/BLACS/LIB/blacs_MPI-LINUX-0.a \
+	    dnl		     /usr/local/BLACS/LIB/blacsF77init_MPI-LINUX-0.a \
+	    dnl		     /usr/local/BLACS/LIB/blacs_MPI-LINUX-0.a"
+	    dnl Note: "-lblacs" has to be specified twice on LSSC2 (old loaders)
+	    dnl AC_ADD_LIBS(LIBS, "-lscalapack -lblacs -lblacsF77init -lblacs")
+	    dnl The next two lines require the custom scotch_esmumps package,
+	    dnl available at ftp://159.226.92.111/pub/RPMS/, since Fedora's
+	    dnl scotch and scotch-devel packages do not contain lib*esmumps.so
+	  case $pass in
+	     0) # pass 0: try with none.
+		;;
+	     1) # pass 1: try without "-lesmumps -lptesmumps"
+		AC_ADD_LIBS(LIBS, "-lscotch -lscotcherrexit")
+		AC_ADD_LIBS(LIBS, "-lptscotch -lptscotcherrexit")
+		;;
+	     2) # pass 2: try with "-lesmumps -lptesmumps"
+		AC_ADD_LIBS(LIBS, "-lesmumps -lscotch -lscotcherrexit")
+		AC_ADD_LIBS(LIBS, "-lptesmumps -lptscotch -lptscotcherrexit")
+		;;
+	  esac
+	else
+	    if test "$with_mumps_optlib" != "none"; then
+		AC_ADD_LIBS(LIBS, "$with_mumps_optlib")
+	    fi
+	fi
+	AC_ADD_LIBS(LIBS, "-lsmumps -ldmumps -lmumps_common -lpord")
+	mumps473_hack=true
+    else
+	AC_ADD_LIBS(LIBS, $with_mumps_lib)
+	mumps473_hack=false
+    fi
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <smumps_c.h>
+		    #include <dmumps_c.h>
+		    main(){smumps_c(0); dmumps_c(0);}])],
+		    enable_mumps=yes
+		    if ldd conftest 2>/dev/null | grep -q 'libdmumps\.so'
+		    then
+			mumps_rpath="yes"
+		    fi, enable_mumps=no)
+    if test "$enable_mumps" = "no" -a "$mumps473_hack" = "true"; then
+	# check MUMPS <= 4.7.3 (hacky!)
+	LIBS="`echo $LIBS | sed -e 's/ -lmumps_common / /g'`"
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <smumps_c.h>
+			#include <dmumps_c.h>
+			main(){smumps_c(0); dmumps_c(0);}])],
+			enable_mumps=yes
+			if ldd conftest 2>/dev/null | grep -q 'libdmumps\.so'
+			then
+			    mumps_rpath="yes"
+			fi, enable_mumps=no)
+    fi
+  #-------------------------------------------------------------------------
+    if test "$enable_mumps" != "no" -o -n "$with_mumps_lib" -o -n "$with_mumps_optlib"; then break; fi
+    LIBS="$LIBS_bak_bak"
+  done
+  ##########################################################################
+    AC_MSG_RESULT($enable_mumps)
+fi
+if test "$enable_mumps" != no; then
+    AC_MSG_NOTICE(*** MUMPS solver enabled)
+    AC_DEFINE(USE_MUMPS, 1)
+    if test "$enable_rpath" = "yes" -a "$mumps_rpath" = "yes" -a \
+	    -n "$with_mumps_libdir"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}${with_mumps_libdir}")
+    fi
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** MUMPS solver disabled)
+    AC_DEFINE(USE_MUMPS, 0)
+fi
+
+#--------------------------------------- PaStiX
+#
+# Note: PaStiX check should come after METIS/ParMETIS
+AC_LANG(C)
+AC_ARG_ENABLE(pastix,
+[  --enable-pastix         enable PaStiX solver
+  --disable-pastix        disable PaStiX solver (default)
+  --with-pastix-dir=DIR   PaStiX installation directory
+  --with-pastix-incdir=DIR path for PaStiX header files
+  --with-pastix-libdir=DIR path for PaStiX libraries
+  --with-pastix-optlib=LIB optional libs for PaStiX (-lptscotch etc) or 'none'],,
+enable_pastix=no)
+if test "$enable_mpi" = no; then enable_pastix=no; fi
+if test "$enable_solver" = no; then enable_pastix=no; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_pastix" != no; then
+    AC_MSG_CHECKING([whether we have PaStiX ])
+    if test -z "$with_pastix_incdir" -o -z "$with_pastix_libdir"; then
+	if test -z "$with_pastix_dir" -a -d "/usr/local/pastix"; then
+	    with_pastix_dir="/usr/local/pastix"
+	fi
+    fi
+    if test -n "$with_pastix_dir"; then
+	AC_READLINK(with_pastix_dir)
+	if test -z "$with_pastix_incdir" -a \
+		-r "$with_pastix_dir/include/pastix.h"; then
+	    with_pastix_incdir="$with_pastix_dir/include"
+	fi
+	if test -z "$with_pastix_libdir"; then
+	    for d in lib lib64; do
+		if test -r "$with_pastix_dir/${d}/libpastix.so" -o \
+			-r "$with_pastix_dir/${d}/libpastix.a"; then
+		    with_pastix_libdir="$with_pastix_dir/${d}"
+		    break
+		fi
+	    done
+	fi
+    fi
+    if test -n "$with_pastix_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, "-I$with_pastix_incdir")
+    fi
+    if test -n "$with_pastix_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, "-L$with_pastix_libdir")
+    fi
+    if test -z "$with_pastix_optlib"; then
+	# Note: '-lptscotch -lptscotcherrexit' may have been added by MUMPS,
+	# so we first try without them.
+	lib_save="$LIBS"
+	for l in "-lpastix" "-lpastix -lptscotch -lptscotcherrexit"; do
+	    AC_ADD_LIBS(LIBS, "$l")
+	    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    #include <pastix.h>
+		    main(){dpastix(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);}])],
+		    enable_pastix=yes
+		    if ldd conftest 2>/dev/null | grep -q 'libpastix\.so'
+		    then
+			pastix_rpath="yes"
+		    fi, enable_pastix=no)
+	    if test "$enable_pastix" != "no"; then break; fi
+	    LIBS="$lib_save"
+	done
+    else
+	if test "$with_pastix_optlib" != "none"; then
+	    AC_ADD_LIBS(LIBS, "$with_pastix_optlib")
+	fi
+	AC_ADD_LIBS(LIBS, "-lpastix")
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    #include <pastix.h>
+		    main(){dpastix(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);}])],
+		    enable_pastix=yes
+		    if ldd conftest 2>/dev/null | grep -q 'libpastix\.so'
+		    then
+			pastix_rpath="yes"
+		    fi, enable_pastix=no)
+    fi
+    AC_MSG_RESULT($enable_pastix)
+fi
+if test "$enable_pastix" != no; then
+    AC_MSG_NOTICE(*** PaStiX solver enabled)
+    AC_DEFINE(USE_PASTIX, 1)
+    if test "$enable_rpath" = "yes" -a "$pastix_rpath" = "yes" -a \
+	    -n "$with_pastix_libdir"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}${with_pastix_libdir}")
+    fi
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** PaStiX solver disabled)
+    AC_DEFINE(USE_PASTIX, 0)
+fi
+
+#--------------------------------------- HIPS
+#
+AC_LANG(C)
+AC_ARG_ENABLE(hips,
+[  --enable-hips           enable HIPS solver
+  --disable-hips          disable HIPS solver (default)
+  --with-hips-incdir=DIR  path for PaStiX header files
+  --with-hips-libdir=DIR  path for PaStiX libraries
+  --with-hips-optlib=LIB  optional libs for HIPS (-lptscotch etc) or 'none'],,
+enable_hips=no)
+if test "$enable_mpi" = no; then enable_hips=no; fi
+if test "$enable_solver" = no; then enable_hips=no; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_hips" != no; then
+    AC_MSG_CHECKING([whether we have HIPS ])
+    if test -n "$with_hips_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, "-I$with_hips_incdir")
+    fi
+    if test -n "$with_hips_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, "-L$with_hips_libdir")
+    fi
+    if test -z "$with_hips_optlib"; then
+	# Note: Scotch or METIS may have been added, so first try without them.
+	lib_save="$LIBS"
+	for l in "-lhips" \
+		 "-lhips -lscotch -lscotcherrexit" \
+		 "-lhips -lptscotch -lptscotcherrexit" \
+		 "-lhips -lmetis"; do
+	    AC_ADD_LIBS(LIBS, "$l")
+	    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    #include <hips.h>
+		    main(){HIPS_Initialize(0);}])],
+		    enable_hips=yes
+		    if ldd conftest 2>/dev/null | grep -q 'libhips\.so'
+		    then
+			hips_rpath="yes"
+		    fi, enable_hips=no)
+	    if test "$enable_hips" != "no"; then break; fi
+	    LIBS="$lib_save"
+	done
+    else
+	if test "$with_hips_optlib" != "none"; then
+	    AC_ADD_LIBS(LIBS, "$with_hips_optlib")
+	fi
+	AC_ADD_LIBS(LIBS, "-lhips")
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+		    #include <mpi.h>
+		    #include <hips.h>
+		    main(){HIPS_Initialize(0);}])],
+		    enable_hips=yes
+		    if ldd conftest 2>/dev/null | grep -q 'libhips\.so'
+		    then
+			hips_rpath="yes"
+		    fi, enable_hips=no)
+    fi
+    AC_MSG_RESULT($enable_hips)
+fi
+if test "$enable_hips" != no; then
+    AC_MSG_NOTICE(*** HIPS solver enabled)
+    AC_DEFINE(USE_HIPS, 1)
+    if test "$enable_rpath" = "yes" -a "$hips_rpath" = "yes" -a \
+	    -n "$with_hips_libdir"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}${with_hips_libdir}")
+    fi
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** HIPS solver disabled)
+    AC_DEFINE(USE_HIPS, 0)
+fi
+
+#--------------------------------------- SPOOLES
+
+AC_LANG(C)
+AC_ARG_ENABLE(spooles,
+[  --enable-spooles        enable SPOOLES solver
+  --disable-spooles       disable SPOOLES solver (default)
+  --with-spooles-incdir=DIR path of SPOOLES header files
+  --with-spooles-lib=LIB SPOOLES libraries],,enable_spooles=no)
+if test "$enable_solver" = no; then enable_spooles=no; fi
+if test "$enable_mpi" = no; then enable_spooles=no; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_spooles" != no; then
+    AC_MSG_CHECKING([whether we have SPOOLES ])
+    if test -n "$with_spooles_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, -I$with_spooles_incdir)
+    fi
+    if test -z "$with_spooles_lib"; then
+	with_spooles_lib="-lspoolesMPI -lspooles"
+    fi
+    LIBS="$LIBS_bak"
+    AC_ADD_LIBS(LIBS, $with_spooles_lib)
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <spoolesMPI.h>
+		   main(){FrontMtx_MPI_solve(0,0,0,0,0,0,0,0,0,0,0);}])],
+		   enable_spooles=yes, enable_spooles=no)
+    AC_MSG_RESULT($enable_spooles)
+fi
+if test "$enable_spooles" != no; then
+    AC_MSG_NOTICE(*** SPOOLES solver enabled)
+    AC_DEFINE(USE_SPOOLES, 1)
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** SPOOLES solver disabled)
+    AC_DEFINE(USE_SPOOLES, 0)
+fi
+
+#
+#--------------------------------------- X9AMG
+
+AC_LANG(C)
+AC_ARG_ENABLE(x9amg,
+[  --enable-x9amg          enable X9 AMG solvers
+  --disable-x9amg         disable X9 AMG solvers (default)
+  --with-x9amg-incdir=DIR X9 AMG header directory
+  --with-x9amg-libdir=DIR X9 AMG lib directory],,enable_x9amg=no)
+if test "$enable_solver" = no; then enable_x9amg=no; fi
+if test "$enable_mpi" = no; then enable_x9amg=no; fi
+if test "$enable_hypre" = no; then enable_x9amg=no; fi
+if test "$enable_x9amg" != no; then
+    AC_MSG_CHECKING([whether we have X9 AMG solvers ])
+    LIBS_bak="${LIBS}"
+    LDFLAGS_bak="${LDFLAGS}"
+    CPPFLAGS_bak="${CPPFLAGS}"
+    if test -n "$with_x9amg_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, -I$with_x9amg_incdir)
+    fi
+    if test -n "$with_x9amg_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, -L$with_x9amg_libdir)
+    fi
+    LIBS="-lx9amg $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <x9amg.h>
+	main(){xj_ho_amg_setup(0,0,0,0,0,0,0,0);}])],
+	enable_x9amg=yes, enable_x9amg=no)
+    AC_MSG_RESULT($enable_x9amg)
+    if test "$enable_x9amg" != "yes"; then
+	LIBS="${LIBS_bak}"
+	LDFLAGS="${LDFLAGS_bak}"
+	CPPFLAGS="${CPPFLAGS_bak}"
+	AC_DEFINE(USE_X9AMG, 0)
+    else
+	AC_DEFINE(USE_X9AMG, 1)
+    fi
+fi
+
+#--------------------------------------- SuiteSparse
+
+AC_LANG(C)
+AC_ARG_ENABLE(ssparse,
+[  --enable-ssparse        enable SuiteSparse solvers (default)
+  --disable-ssparse       disable SuiteSparse solvers
+  --with-ssparse-incdir=DIR path to SuiteSparse header files
+  --with-ssparse-libdir=DIR path to SuiteSparse libs],,enable_ssparse=yes)
+if test "$enable_solver" = "no"; then enable_ssparse="no"; fi
+if test "$with_float" != "double"; then enable_ssparse="no"; fi
+CPPFLAGS_bak="$CPPFLAGS"
+LIBS_bak="$LIBS"
+LDFLAGS_bak="$LDFLAGS"
+if test "$enable_ssparse" != no; then
+    AC_MSG_CHECKING([whether we have SuiteSparse solvers ])
+    if test -z "$with_ssparse_incdir"; then
+	for d in /usr/local/SuiteSparse/include /usr/include/suitesparse
+	do
+	    if test -r ${d}/umfpack.h; then
+		with_ssparse_incdir=$d
+		break
+	    fi
+	done
+    fi
+    if test -z "$with_ssparse_libdir"; then
+	if test -r /usr/local/SuiteSparse/lib/libumfpack.a -o \
+		-r /usr/local/SuiteSparse/lib/libumfpack.so; then
+	    with_ssparse_libdir=/usr/local/SuiteSparse/lib
+	fi
+    fi
+    if test -n "$with_ssparse_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, -I$with_ssparse_incdir)
+    fi
+    if test -n "$with_ssparse_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, -L$with_ssparse_libdir)
+    fi
+    AC_ADD_LIBS(LIBS, -lumfpack -lamd)
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <umfpack.h>
+		   main(){umfpack_di_solve (0, 0, 0, 0, 0, 0, 0, 0, 0);}])],
+		   enable_ssparse=yes, enable_ssparse=no)
+    AC_MSG_RESULT($enable_ssparse)
+fi
+if test "$enable_ssparse" != no; then
+    AC_MSG_NOTICE(*** SuiteSparse solvers enabled)
+    AC_DEFINE(USE_SSPARSE, 1)
+else
+    CPPFLAGS="$CPPFLAGS_bak"
+    LIBS="$LIBS_bak"
+    LDFLAGS="$LDFLAGS_bak"
+    AC_MSG_NOTICE(*** SuiteSparse solvers disabled)
+    AC_DEFINE(USE_SSPARSE, 0)
+fi
+
+#
+#--------------------------------------- LASPack
+#
+# Note: it is assumed that LASPack's headers are in 'INCDIR/laspack/.'
+#
+
+AC_LANG(C)
+AC_ARG_ENABLE(laspack,
+[  --enable-laspack        enable LASPack solver
+  --disable-laspack       disable LASPack solver (default)],,enable_laspack=no)
+if test "$enable_solver" = "no"; then enable_laspack="no"; fi
+if test "$with_float" != "double"; then enable_laspack="no"; fi
+if test "$enable_laspack" != no; then
+    AC_MSG_CHECKING([whether we have LASPack ])
+    LIBS_bak="${LIBS}"
+    LIBS="-llaspack $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <laspack/qmatrix.h>
+	main(){Q_Constr(0,0,0,0,0,0,0);}])],
+	enable_laspack=yes,enable_laspack=no)
+    LIBS="${LIBS_bak}"
+    AC_MSG_RESULT($enable_laspack)
+fi
+if test "$enable_laspack" != no; then
+    AC_MSG_NOTICE(*** LASPack solver enabled)
+    LIBS="-llaspack $LIBS"
+    AC_DEFINE(USE_LASPACK, 1)
+else
+    AC_MSG_NOTICE(*** LASPack solver disabled)
+    AC_DEFINE(USE_LASPACK, 0)
+fi
+
+#
+#--------------------------------------- MINRES
+
+AC_LANG(C)
+AC_ARG_ENABLE(minres,
+[  --enable-minres         enable MINRES solver (default)
+  --disable-minres        disable MINRES solver],,enable_minres=yes)
+if test "$enable_solver" = "no"; then enable_minres="no"; fi
+if test "$enable_minres" != no; then
+    AC_MSG_CHECKING([whether we have MINRES ])
+    LIBS_bak="${LIBS}"
+    LIBS="-lminres $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([main(){$MINRESWRAPPER();}])],
+	enable_minres=yes,enable_minres=no)
+    LIBS="${LIBS_bak}"
+    AC_MSG_RESULT($enable_minres)
+fi
+if test "$enable_minres" != no; then
+    AC_MSG_NOTICE(*** MINRES solver enabled)
+    LIBS="-lminres $LIBS"
+    AC_DEFINE(USE_MINRES, 1)
+else
+    AC_MSG_NOTICE(*** MINRES solver disabled)
+    AC_DEFINE(USE_MINRES, 0)
+fi
+
+#
+#--------------------------------------- hSParse
+
+AC_LANG(C)
+AC_ARG_ENABLE(hsparse,
+[  --enable-hsparse       enable HSparse solvers (default)
+  --disable-hsparse       disable HSparse solvers
+  --with-hsparse-incdir=DIR HSparse header directory
+  --with-hsparse-libdir=DIR HSparse lib directory],,enable_hsparse=yes)
+if test "$enable_solver" = no; then enable_hsparse=no; fi
+if test "$enable_hsparse" != no; then
+    AC_MSG_CHECKING([whether we have HSparse solver ])
+    LIBS_bak="${LIBS}"
+    LDFLAGS_bak="${LDFLAGS}"
+    CPPFLAGS_bak="${CPPFLAGS}"
+    if test -n "$with_hsparse_incdir"; then
+	AC_ADD_FLAGS(CPPFLAGS, -I$with_hsparse_incdir)
+    fi
+    if test -n "$with_hsparse_libdir"; then
+	AC_ADD_FLAGS(LDFLAGS, -L$with_hsparse_libdir)
+    fi
+    LIBS="-lswsparse_core $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <swSparse.h>
+	main(){swSparse_destroy(0);}])],
+	enable_hsparse=yes, enable_hsparse=no)
+    AC_MSG_RESULT($enable_hsparse)
+    if test "$enable_hsparse" != "yes"; then
+	LIBS="${LIBS_bak}"
+	LDFLAGS="${LDFLAGS_bak}"
+	CPPFLAGS="${CPPFLAGS_bak}"
+	AC_DEFINE(USE_HSPARSE, 0)
+    else
+	AC_DEFINE(USE_HSPARSE, 1)
+    fi
+fi
+
+#--------------------------------------- Parallel ARPACK
+AC_SUBST(USE_ARPACK, 0)
+AC_LANG(C)
+AC_ARG_ENABLE(arpack,
+[  --enable-arpack         enable PARPACK eigen solver (default)
+  --disable-arpack        disable PARPACK eigen solver],,enable_arpack=yes)
+if test "$enable_mpi" != "yes"; then enable_arpack="no"; fi
+if test "$with_float" != "double"; then enable_arpack="no"; fi
+if test "$enable_eigen_solver" = "no"; then enable_arpack="no"; fi
+if test "$enable_arpack" != "no"; then
+    AC_MSG_CHECKING([whether we have Parallel ARPACK ])
+    LIBS_bak="$LIBS"
+    for l in "-lparpack" "-lparpack -larpack"; do
+	LIBS="$l $LIBS_bak"
+	AC_LINK_IFELSE([AC_LANG_SOURCE([main(){$PDSAUPD(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);}])], enable_arpack=yes,enable_arpack=no)
+	if test "$enable_arpack" = "yes"; then
+	    break
+	fi
+	LIBS="$LIBS_bak"
+    done
+    AC_MSG_RESULT($enable_arpack)
+fi
+if test $enable_arpack != no; then
+    AC_MSG_NOTICE(*** PARPACK eigen solver enabled)
+    AC_DEFINE(USE_ARPACK, 1)
+else
+    AC_MSG_NOTICE(*** PARPACK eigen solver disabled)
+    AC_DEFINE(USE_ARPACK, 0)
+fi
+
+#--------------------------------------- JDBSYM
+AC_SUBST(USE_JDBSYM, 0)
+AC_SUBST(USE_JDBSYM_PARALLEL, 0)
+AC_LANG(C)
+AC_ARG_ENABLE(jdbsym,
+[  --enable-jdbsym         enable JDBSYM eigen solver (default)
+  --disable-jdbsym        disable JDBSYM eigen solver],,enable_jdbsym=yes)
+if test "$with_float" != "double"; then enable_jdbsym="no"; fi
+if test "$enable_eigen_solver" = "no"; then enable_jdbsym="no"; fi
+LIBS_bak="$LIBS"
+if test "$enable_jdbsym" != "no"; then
+    AC_MSG_CHECKING([whether we have JDBSYM ])
+    LIBS="-ljdbsym $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include "jdbsym.h"
+	main(){jdbsym(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);}])],
+	enable_jdbsym=yes,enable_jdbsym=no)
+    AC_MSG_RESULT($enable_jdbsym)
+else
+    AC_MSG_NOTICE(*** JDBSYM eigen solver disabled)
+fi
+if test $enable_jdbsym != no; then
+    AC_DEFINE(USE_JDBSYM, 1)
+    AC_MSG_CHECKING([whether JDBSYM is parallel ])
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include "jdbsym.h"
+	main(){jdbsym_set_parms(0,0,0,0,0);}])],
+	enable_jdbsym_parallel=yes,enable_jdbsym_parallel=no)
+    AC_MSG_RESULT($enable_jdbsym_parallel)
+    if test $enable_jdbsym_parallel != no; then
+	AC_DEFINE(USE_JDBSYM_PARALLEL, 1)
+    else
+	AC_DEFINE(USE_JDBSYM_PARALLEL, 0)
+    fi
+else
+    AC_DEFINE(USE_JDBSYM, 0)
+    AC_DEFINE(USE_JDBSYM_PARALLEL, 0)
+    LIBS="${LIBS_bak}"
+fi
+
+#--------------------------------------- BLOPEX
+AC_SUBST(USE_BLOPEX, 0)
+AC_LANG(C)
+AC_ARG_ENABLE(blopex,
+[  --enable-blopex         enable BLOPEX (LOBPCG) eigen solver (default)
+  --disable-blopex        disable BLOPEX (LOBPCG) eigen solver],,enable_blopex=yes)
+LIBS_bak="$LIBS"
+if test "$with_float" != "double"; then enable_blopex="no"; fi
+if test "$enable_eigen_solver" = "no"; then enable_blopex="no"; fi
+if test "$enable_blopex" != "no"; then
+    AC_MSG_CHECKING([whether we have BLOPEX ])
+    LIBS="-lBLOPEX $LIBS"
+    for f in lobpcg_solve lobpcg_solve_double; do
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include "blopex.h"
+	    main(){lobpcg_Tolerance t; lobpcg_BLASLAPACKFunctions b;
+	    $f(0,0,0,0,0,0,0,0,b,t,0,0,0,0,0,0,0,0,0); $DGELS();}])],
+	enable_blopex=yes,enable_blopex=no)
+	if test "$enable_blopex" = "yes"; then break; fi
+    done
+    AC_MSG_RESULT($enable_blopex)
+fi
+if test $enable_blopex != no; then
+    AC_MSG_NOTICE(*** BLOPEX eigen solver enabled)
+    AC_DEFINE(USE_BLOPEX, 1)
+else
+    AC_MSG_NOTICE(*** BLOPEX eigen solver disabled)
+    AC_DEFINE(USE_BLOPEX, 0)
+    LIBS="${LIBS_bak}"
+fi
+
+#--------------------------------------- PRIMME
+AC_SUBST(USE_PRIMME, 0)
+AC_LANG(C)
+AC_ARG_ENABLE(primme,
+[  --enable-primme         enable PRIMME eigen solver
+  --disable-primme        disable PRIMME eigen solver (default)],,enable_primme=no)
+LIBS_bak="$LIBS"
+if test "$with_float" != "double"; then enable_primme="no"; fi
+if test "$enable_eigen_solver" = "no"; then enable_primme="no"; fi
+if test "$enable_primme" != "no"; then
+    AC_MSG_CHECKING([whether we have PRIMME ])
+    LIBS="-lprimme $LIBS"
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include "primme.h"
+	main(){dprimme(0,0,0,0);}])], enable_primme=yes,enable_primme=no)
+    AC_MSG_RESULT($enable_primme)
+fi
+if test $enable_primme != no; then
+    AC_MSG_NOTICE(*** PRIMME eigen solver enabled)
+    AC_DEFINE(USE_PRIMME, 1)
+else
+    AC_MSG_NOTICE(*** PRIMME eigen solver disabled)
+    AC_DEFINE(USE_PRIMME, 0)
+    LIBS="${LIBS_bak}"
+fi
+
+#--------------------------------------- SLEPc
+
+AC_LANG(C)
+AC_ARG_ENABLE(slepc,
+[  --enable-slepc          enable SLEPc eigen solver (default)
+  --disable-slepc         disable SLEPc eigen solver],,enable_slepc=auto)
+if test "$enable_petsc" = "no" -o "$enable_eigen_solver" = "no"; then
+    enable_slepc=no;
+fi
+if test -n "$SLEPC_DIR"; then
+    if test "$enable_slepc" = auto; then
+	enable_slepc=yes;
+    fi
+else
+    if test "$enable_slepc" = yes; then
+	AC_MSG_NOTICE(*** --enable-slepc specified but SLEPC_DIR is not set!)
+    fi
+    enable_slepc=no;
+fi
+if test "$enable_slepc" != no; then
+    AC_MSG_CHECKING([whether we have SLEPc ])
+    AC_READLINK(SLEPC_DIR)
+    if test -r "${SLEPC_DIR}/conf/slepc_common"; then
+        slepc_conf_base="${SLEPC_DIR}/conf/slepc_common"
+    elif test -r "${SLEPC_DIR}/bmake/slepc_common"; then
+        slepc_conf_base="${SLEPC_DIR}/bmake/slepc_common"
+    elif test -r "${SLEPC_DIR}/lib/slepc/conf/slepc_common"; then
+	slepc_conf_base="${SLEPC_DIR}/lib/slepc/conf/slepc_common"
+    else
+	slepc_conf_base="`find ${SLEPC_DIR}/ -name slepc_common -print \
+			 	2>/dev/null`"
+	if test -z "$slepc_conf_base"; then
+	    enable_slepc=no
+	fi
+    fi
+    if test "$enable_slepc" != no; then
+	# Determine SLEPc libs from ${SLEPC_DIR}/bmake/common/base
+	cat <<END >Makefile.tmp
+include:
+	@echo \${SLEPC_INCLUDE}
+lib_dir:
+	@echo \${SLEPC_LIB_DIR}
+.PHONY: lib_dir include
+include $slepc_conf_base
+END
+	CPPFLAGS_bak="$CPPFLAGS"
+	LDFLAGS_bak="$LDFLAGS"
+	LIBS_bak="$LIBS"
+	slepc_libdir="`make -f Makefile.tmp lib_dir`"
+	slepc_include="`make -f Makefile.tmp include`"
+	if test -z "$slepc_include"; then
+	    slepc_include="-I${SLEPC_DIR}/include";
+	fi
+	/bin/rm -f Makefile.tmp
+	AC_ADD_FLAGS(CPPFLAGS, $slepc_include)
+	AC_ADD_FLAGS(LDFLAGS, -L$slepc_libdir)
+	AC_ADD_LIBS(LIBS, -lslepc)
+        slepc_rpath="no"
+	AC_LINK_IFELSE([AC_LANG_PROGRAM(,[EPSCreate(0,0);])],
+		   if ldd conftest 2>/dev/null | grep -q 'libslepc\.so'; then
+			slepc_rpath="yes"
+		   fi, enable_slepc="no")
+	if test "$enable_slepc" = "no"; then
+	    CPPFLAGS="$CPPFLAGS_bak"
+	    LDFLAGS="$LDFLAGS_bak"
+	    LIBS="$LIBS_bak"
+	fi
+    fi
+    AC_MSG_RESULT($enable_slepc)
+fi
+if test "$enable_slepc" != no; then
+    AC_MSG_NOTICE(*** SLEPc eigen solver enabled (${SLEPC_DIR}))
+    if test "$enable_rpath" = "yes" -a "$slepc_rpath" = "yes"; then
+	AC_ADD_LIBS(LIBS, "${with_rpath_flag}${slepc_libdir}")
+    fi
+    AC_DEFINE(USE_SLEPC, 1)
+else
+    AC_MSG_NOTICE(*** SLEPc eigen solver disabled)
+    AC_DEFINE(USE_SLEPC, 0)
+fi
+
+#--------------------------------------- GWLOBPCG (Gao Weiguo's LOBPCG)
+AC_LANG(C)
+AC_ARG_ENABLE(gwlobpcg,
+[  --enable-gwlobpcg       enable GWLOBPCG solver
+  --disable-gwlobpcg      disable GWLOBPCG solver (default)
+  --with-gwlobpcg-lib=LIB GWLOBPCG library (default '-llobpcg')],,
+enable_gwlobpcg=no)
+if test "$enable_mpi" = "no"; then enable_gwlobpcg="no"; fi
+if test "$enable_scalapack" = "no"; then enable_gwlobpcg="no"; fi
+if test "$with_float" != "double"; then enable_gwlobpcg="no"; fi
+if test "$enable_eigen_solver" = "no"; then enable_gwlobpcg="no"; fi
+if test "$enable_gwlobpcg" != "no"; then
+    AC_MSG_CHECKING([whether we have GWLOBPCG ])
+    CPPFLAGS_bak="$CPPFLAGS"
+    LIBS_bak="$LIBS"
+    LDFLAGS_bak="$LDFLAGS"
+    if test -z "$with_gwlobpcg_lib"; then
+	with_gwlobpcg_lib="-llobpcg"
+    fi
+    AC_ADD_LIBS(LIBS, "$with_gwlobpcg_lib")
+dnl The next two lines are to be removed in the future
+AC_ADD_FLAGS(LDFLAGS, "-L$HOME/src/BLOPEX/lobpcg_revcom")
+AC_ADD_LIBS(LIBS, "${with_rpath_flag}$HOME/src/BLOPEX/lobpcg_revcom -limf")
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <stdio.h>
+				    #include <mpi.h>
+				    dnl Note: remove the next three lines!
+				    int orthog_blockab(void){}
+				    int orthog_inneraa(void){}
+				    int orthog_innerab(void){}
+				    main(){lobpcg_revcomc(0,0,0,0,0,0,0,0,0,0,
+							  0,0,0,0,0,0,0,0,0,0,
+							  0,0,0,0,0,0,0,0,0,0,
+							  0);}])],
+		   enable_gwlobpcg=yes,enable_gwlobpcg=no)
+    AC_MSG_RESULT($enable_gwlobpcg)
+    if test "$enable_gwlobpcg" = "no"; then
+	LIBS="${LIBS_bak}"
+	CPPFLAGS="${CPPFLAGS_bak}"
+	LDFLAGS="${LDFLAGS_bak}"
+    fi
+fi
+if test $enable_gwlobpcg != no; then
+    AC_MSG_NOTICE(*** GWLOBPCG eigen solver enabled)
+    AC_DEFINE(USE_GWLOBPCG, 1)
+else
+    AC_MSG_NOTICE(*** GWLOBPCG eigen solver disabled)
+    AC_DEFINE(USE_GWLOBPCG, 0)
+fi
+
+#--------------------------------------- PAPI
+
+AC_LANG(C)
+AC_ARG_ENABLE(papi,
+[  --enable-papi           enable PAPI support (default)
+  --disable-papi          disable PAPI support
+  --with-papi-lib=LIB     PAPI lib
+  --with-papi-incdir=DIR  PAPI include dir],,enable_papi=yes)
+if test "$enable_papi" != no; then
+    AC_MSG_CHECKING([whether we have PAPI ])
+    AC_FIND_HEADER(with_papi_incdir, , *papi*, papi)
+    AC_FIND_LIB(papi, , *papi*, papi, [AC_LANG_SOURCE([#include "papi.h"
+            main(){PAPI_flops(0, 0, 0, 0);}])])
+    AC_MSG_RESULT($enable_papi)
+fi
+if test "$enable_papi" != no; then
+    AC_MSG_NOTICE(*** PAPI interface enabled)
+    AC_MSG_NOTICE(*** PAPI include dir = $with_papi_incdir)
+    AC_MSG_NOTICE(*** PAPI lib = $with_papi_lib)
+    AC_DEFINE(USE_PAPI, 1)
+else
+    AC_MSG_NOTICE(*** PAPI interface disabled)
+    AC_DEFINE(USE_PAPI, 0)
+fi
+
+#--------------------------------------- OSKI
+
+AC_LANG(C)
+AC_ARG_ENABLE(oski,
+[  --enable-oski           enable OSKI: Optimized Sparse Kernel Interface
+  --disable-oski          disable OSKI (default)
+  --with-oski-dir=DIR     OSKI installation prefix (default "/usr /usr/local")],,
+  enable_oski=no)
+if test "$enable_oski" != no; then
+    AC_MSG_CHECKING([whether we have OSKI])
+    if test -z "$with_oski_dir"; then
+	with_oski_dir="/usr /usr/local"
+    fi
+    enable_oski="no"
+    CPPFLAGS_bak="$CPPFLAGS"
+    LIBS_bak="$LIBS"
+    LDFLAGS_bak="$LDFLAGS"
+    for d in $with_oski_dir; do
+	if ! test -r "${d}/lib/oski/site-modules-shared.txt"; then
+	    continue;
+	fi
+	if test "$d" != "/usr"; then
+	    AC_ADD_FLAGS(CPPFLAGS, "-I${d}/include")
+	fi
+	AC_ADD_FLAGS(LDFLAGS, [-Wl,-rpath,${d}/lib/oski -L${d}/lib/oski])
+	AC_ADD_LIBS(LIBS, [`cat ${d}/lib/oski/site-modules-shared.txt`])
+	AC_LINK_IFELSE([AC_LANG_SOURCE([#include <oski/oski.h>
+		       main(){oski_Init ();}])], enable_oski=yes,enable_oski=no)
+	if test "$enable_oski" != "no"; then
+	    break
+	fi
+	CPPFLAGS="$CPPFLAGS_bak"
+	LIBS="$LIBS_bak"
+	LDFLAGS="$LDFLAGS_bak"
+    done
+    AC_MSG_RESULT($enable_oski)
+fi
+if test "$enable_oski" != no; then
+    AC_MSG_NOTICE([*** OSKI interface enabled ($d)])
+    AC_DEFINE(USE_OSKI, 1)
+else
+    AC_MSG_NOTICE([*** OSKI interface disabled])
+    AC_DEFINE(USE_OSKI, 0)
+fi
+
+#--------------------------------------- p4est
+
+AC_LANG(C)
+AC_SUBST(HAVE_P4EST, 0)
+AC_ARG_ENABLE(p4est,
+[  --enable-p4est          enable phg-to-p4est (default)
+  --disable-p4est         disable phg-to-p4est
+  --with-p4est-dir=DIR    p4est installation dir (default "/usr /usr/local /usr/local/p4est* $HOME/p4est*")],, enable_p4est="auto")
+if test "$enable_p4est" = "auto"; then
+    if test "$enable_mpi" != "no"; then
+	enable_p4est="yes"
+    else
+	enable_p4est="no"
+    fi
+fi
+if test "$enable_p4est" != "no"; then
+    AC_MSG_CHECKING([whether we have p4est])
+    if test -z "$with_p4est_dir"; then
+	with_p4est_dir="/usr /usr/local /usr/local/p4est* $HOME/p4est*"
+    fi
+    enable_p4est="no"
+    for d in $with_p4est_dir; do
+	if test -r "${d}/etc/Makefile.p4est.mk"; then
+	    p4estmk="${d}/etc/Makefile.p4est.mk"
+	elif test -r "${d}/local/etc/Makefile.p4est.mk"; then
+	    p4estmk="${d}/local/etc/Makefile.p4est.mk"
+	else
+	    p4estmk=""
+	fi
+	if ! test -r "$p4estmk"; then
+	    continue
+	fi
+	cat <<END >Makefile.tmp
+cppflags:
+	@echo \${P4EST_CPPFLAGS}
+ldflags:
+	@echo \${P4EST_LDFLAGS} -Wl,-rpath,\${p4est_exec_prefix}/lib
+libs:
+	@echo \${P4EST_LIBS} 
+.PHONY: cppflags ldflags libs
+include $p4estmk
+END
+	AC_ADD_FLAGS(CPPFLAGS, [`make -f Makefile.tmp cppflags`])
+	AC_ADD_FLAGS(LDFLAGS, [`make -f Makefile.tmp ldflags`])
+	AC_ADD_LIBS(LIBS, [`make -f Makefile.tmp libs`])
+	/bin/rm -f Makefile.tmp
+	enable_p4est="yes"
+	break
+    done
+    AC_MSG_RESULT($enable_p4est)
+fi
+if test "$enable_p4est" != "no"; then
+    AC_MSG_NOTICE([*** p4est interface enabled ($d)])
+    AC_DEFINE(HAVE_P4EST, 1)
+else
+    AC_MSG_NOTICE([*** p4est interface disabled])
+    AC_DEFINE(HAVE_P4EST, 0)
+fi
+
+#
+# Note: here come optional system libraries. They are placed after all other
+# packages so that they are loaded first, to avoid potential conflicts or
+# interference.
+#
+# For example, MKL contains a subset of the GMP functions, which are sometimes
+# incompatible with the other functions of libgmp, so libgmp must come before
+# libmkl or quad-gauss.c may fail.
+#
+
+#--------------------------------------- libmatheval
+AC_LANG(C)
+AC_ARG_ENABLE(matheval,
+[  --enable-matheval       enable use of GNU libmatheval (default)
+  --disable-matheval      disable use of GNU libmatheval],,
+  enable_matheval=yes)
+if test "$enable_matheval" = "yes"; then
+    AC_CHECK_LIBHEADER([matheval], [AC_LANG_SOURCE([evaluator_create(0)])], [#include <matheval.h>])
+else
+    AC_MSG_NOTICE(*** GNU libmatheval disabled by user)
+    AC_DEFINE(HAVE_LIBMATHEVAL, 0)
+fi
+
+#--------------------------------------- GMP
+AC_LANG(C)
+AC_ARG_ENABLE(gmp,
+[  --enable-gmp            enable use of GMP (default)
+  --disable-gmp           disable use of GMP],,
+  enable_gmp=yes)
+if test "$enable_gmp" = "yes"; then
+    AC_CHECK_LIBHEADER([gmp], [AC_LANG_SOURCE([mpf_init(0)])], [#include <gmp.h>])
+else
+    AC_MSG_NOTICE(*** GNU MP library disabled by user)
+    AC_DEFINE(HAVE_LIBGMP, 0)
+fi
+
+#--------------------------------------- MPFR
+AC_LANG(C)
+AC_SUBST(USE_MPFR, "")
+AC_ARG_ENABLE(mpfr,
+[  --enable-mpfr           enable use of MPFR (default)
+  --disable-mpfr          disable use of MPFR],, enable_mpfr=yes)
+if test "$enable_gmp" != "yes"; then enable_mpfr="no"; fi
+if test "$enable_mpfr" = "yes"; then
+    AC_CHECK_LIBHEADER([mpfr], [AC_LANG_SOURCE([mpfr_init2(0,0)])], [#include <mpfr.h>])
+else
+    AC_MSG_NOTICE(*** MPFR library disabled)
+    AC_DEFINE(HAVE_LIBMPFR, 0)
+fi
+
+#--------------------------------------- PSAPI (Windows)
+AC_LANG(C)
+AC_CHECK_HEADER([psapi.h], [psapi="yes"], [psapi="no"], [#include <windows.h>])
+LIBS_bak="$LIBS"
+if test "$psapi" = "yes"; then
+    AC_MSG_CHECKING([for -lpsapi])
+    AC_ADD_LIBS(LIBS, [-lpsapi])
+    AC_LINK_IFELSE([AC_LANG_SOURCE([#include <windows.h>
+			#include <psapi.h>
+			main(){GetProcessMemoryInfo(0,0,0);}])],
+		    psapi="yes", psapi="no")
+    AC_MSG_RESULT($psapi)
+fi
+if test "$psapi" = "yes"; then
+    AC_DEFINE(HAVE_PSAPI, 1)
+else
+    AC_DEFINE(HAVE_PSAPI, 0)
+    LIBS="$LIBS_bak"
+fi
+#--------------------------------------- the end
+
+# At this stage, if LINKER is defined then it is either defined through the
+# environment variable 'LINKER', or by enabling a C++ package (e.g., trilinos)
+if test -z "$LINKER"; then
+dnl    if test "$enable_shared" = "yes"; then
+dnl	# Note: eigen-trilinos.o and solver-trilinos.o require libstdc++,
+dnl	# even if they are effectively empty files when Trilinos is disabled.
+	LINKER="$CXX"
+dnl    else
+dnl	LINKER="$CC"
+dnl    fi
+fi
+
+dnl This is hacky: add /usr/local/{lib,lib64} to rpath (see note below)
+if test "$enable_rpath" = "yes"; then
+    dnl %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    dnl Note: /usr/local/{lib,lib64} is appended to rpath since we frequently
+    dnl install new shared libs there and don't want to run ldd each time.
+    dnl
+    dnl WARNING: DON'T LEAVE OBSOLETE LIBS THERE!
+    dnl %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    dnl strip the leading "-" from $with_rpath_flag to make grep happy
+    tmp="`echo $with_rpath_flag | sed -e 's/^-//'`"
+
+    if test -d /usr/local/lib; then
+	if ! echo "$LIBS" | grep -q "$tmp/usr/local/lib/* "; then
+	    LIBS="$LIBS $with_rpath_flag/usr/local/lib"
+	fi
+    fi
+
+    if test -d /usr/local/lib64; then
+	if ! echo "$LIBS" | grep -q "$tmp/usr/local/lib64/* "; then
+	    LIBS="$LIBS $with_rpath_flag/usr/local/lib64"
+	fi
+    fi
+fi
+
+if test "$enable_shared" = "yes"; then
+    # We are building libphg.so
+    if test "$enable_link" = "yes"; then
+	# link libphg.so with LIBS
+	BUILD_SHARED_LIBS="$LDFLAGS $LIBS"
+	if echo "$LIBS" | grep -q " -lpthread "; then
+	    # add -lpthread to avoid errors with MKL's libguide or libiomp5
+	    LIBS="-lphg -lpthread"
+	else
+	    LIBS="-lphg"
+	fi
+	if test "$enable_omp" = "yes"; then
+	    LDFLAGS="-L${PHG_DIR}/src $with_omp_flags"
+	else
+	    LDFLAGS="-L${PHG_DIR}/src"
+	fi
+    else
+	# don't link libphg.so with LIBS
+	BUILD_SHARED_LIBS=""
+	LIBS="-lphg $LIBS"
+	LDFLAGS="-L${PHG_DIR}/src $LDFLAGS"
+    fi
+    if test "$enable_rpath" = "yes"; then
+	dnl add rpath for libphg.so
+	LIBS="${with_rpath_flag}${PHG_DIR}/src $LIBS"
+    fi
+else
+    # We are building libphg.a
+    BUILD_SHARED_LIBS=""
+    LIBS="-lphg $LIBS"
+    LDFLAGS="-L${PHG_DIR}/src $LDFLAGS"
+fi
+
+AC_OUTPUT

@@ -1,0 +1,110 @@
+.SUFFIXES: .cxx
+
+CPP		= @CPP@
+CPPFLAGS	= @CPPFLAGS@ -D__PHG__
+BUILD_CPPFLAGS	= -DMPI_NO_CPPBIND @TCLTK_INCLUDE@ @VTK_INCLUDE@ -DVTK_DIR="\"@VTK_DIR@\"" @VTKTCL_C@ @GZIP_PROG@ @BZIP2_PROG@
+
+CC		= @CC@
+CFLAGS		= @CFLAGS@
+BUILD_CFLAGS	= @BUILD_CFLAGS@
+USER_CFLAGS	=
+
+CXX		= @CXX@
+CXXFLAGS	= @CXXFLAGS@
+BUILD_CXXFLAGS	= @BUILD_CXXFLAGS@
+USER_CXXFLAGS	=
+
+FC		= @FC@
+FCFLAGS		= @FCFLAGS@
+USER_FCFLAGS	=
+
+F77		= @F77@
+FFLAGS		= @FFLAGS@
+USER_FFLAGS	=
+
+LINKER		= @LINKER@
+LDFLAGS		= @LDFLAGS@
+USER_LDFLAGS	=
+
+LIBS		= @LIBS@
+USER_LIBS	=
+
+AR		= @AR@
+RANLIB		= @RANLIB@
+BUILD_SHARED	= @BUILD_SHARED@
+BUILD_SHARED_LIBS = @BUILD_SHARED_LIBS@
+LIB_SUFFIX	= @LIB_SUFFIX@
+
+.c.o:
+	${CC} ${CFLAGS} ${CPPFLAGS} ${USER_CFLAGS} -c $*.c
+
+.cxx.o:
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.cxx
+
+.cpp.o:
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.cpp
+
+.C.o:
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.C
+
+.f.o:
+	${FC} ${FCFLAGS} ${USER_FCFLAGS} -c $*.f
+
+% : %.o
+	${LINKER} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+% : %.c
+	${CC} ${CFLAGS} ${CPPFLAGS} ${USER_CFLAGS} -c $*.c
+	${LINKER} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+% : %.cxx
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.cxx
+	${CXX} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+% : %.cpp
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.cpp
+	${CXX} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+% : %.C
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${USER_CXXFLAGS} -c $*.C
+	${CXX} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+% : %.f
+	${FC} ${FCFLAGS} ${USER_FCFLAGS} -c $*.f
+	${LINKER} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $*.o ${USER_LIBS} ${LIBS}
+
+CC:
+	@echo $(CC)
+
+CPP:
+	@echo $(CPP)
+
+CXX:
+	@echo $(CXX)
+
+FC:
+	@echo $(FC)
+
+CPPFLAGS:
+	@echo $(CPPFLAGS)
+
+CFLAGS:
+	@echo $(CFLAGS)
+
+CXXFLAGS:
+	@echo $(CXXFLAGS)
+
+FFLAGS:
+	@echo $(FFLAGS)
+
+FCFLAGS:
+	@echo $(FCFLAGS)
+
+LDFLAGS:
+	@echo $(LDFLAGS)
+
+LIBS:
+	@echo $(LIBS)
+
+LINKER:
+	@echo $(LINKER)

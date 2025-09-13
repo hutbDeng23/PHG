@@ -1,0 +1,94 @@
+$Id: INSTALL,v 1.17 2021/02/26 04:56:32 zlb Exp $
+
+
+1. Compiling and installing PHG
+-------------------------------
+
+Type in the top-level source directory:
+
+	./configure
+	gmake all
+	gmake install
+	gmake install-doc
+
+The above commands will compile PHG with a minimum set of
+features. Note that GNU make is required. './configure --help'
+will show available options for 'configure'. Please check
+the configure output for what features are enabled.
+
+***************************** Note ******************************
+* The files src/refine.c and src/coarsen.c in this distribution *
+* do not allow parallel mesh refinement and coarsening. You may *
+* replace them with the precompiled object files in the 'obj/'	*
+* directory if you need	parallel mesh refinement or coarsening. *
+* Please read obj/ReadMe.txt for more information.		*
+*****************************************************************
+
+
+2. Running the example programs
+-------------------------------
+
+The directory './examples' contains a few example programs.
+The 'gmake install' command will install them in the directory
+'PREFIX/share/doc/phg/examples'.
+
+To run an example program:
+
+	cd examples
+	mpirun -np 1 ./poisson
+	mpirun -np 1 ./poisson -help
+
+
+3. Optional features and packages
+---------------------------------
+
+PHG has interfaces to a number of external packages including
+METIS/ParMETIS, Tcl/Tk, VTK, PETSc, HYPRE, Trilinos, SuperLU, MUMPS,
+SPOOLES, PARPACK, JDBSYM, BLOPEX, PRIMME, SLEPc, PAPI, etc.
+Most interfaces are automatically enabled if configure can locate the
+relevant header files and libraries.
+
+Many external packages require BLAS and LAPACK libraries. If PETSc
+is enabled (the environment variable PETSC_DIR points to a correct
+PETSc installation) then the configure script can get information
+about BLAS and LAPACK libraries from the PETSc installation.
+Otherwise you need to manually specify BLAS and LAPACK libraries
+using the configure options '--with-blas=LIB' and '--with-lapack=LIB',
+e.g., '--with-blas=-lblas --with-lapack=-llapack'.
+
+If you encounter problems in enabling an external package, it is often
+helpful to examine the error messages in 'config.log'.
+
+
+4. Compiling programs linked with the PHG library
+-------------------------------------------------
+
+PHG's configure script creates a `Makefile.inc', which provides
+compiler/linker flags and libraries for the using the PHG library.
+
+Both the `Makefile.inc' files located in the top the top level directory
+of the PHG's source files (created by the `configure' script), and in
+'<instdir>/share/phg' (created by the `make install' command), are valid
+for use in compiling user programs.
+
+In the discussions below we assume the fulll pathname of Makefile.inc is
+`$HOME/phg/Makefile.inc'.
+
+`Makefile.inc' provides standard macros like CC, CPP, CXX, FC, CPPFLAGS,
+CFLAGS, CXXFLAGS, FCFLAGS, LDFLAGS and LIBS. These macros can be retrived
+with commands like:
+	make -f ~/phg/Makefile.inc CPPFLAGS CFLAGS
+
+If the user program consists of a single source file, say myprog.c, then
+it can be compiled and linked with Makefile.inc directly:
+	make -f ~/phg/Makefile.inc myprog
+
+Suppose the user program consists of multiple source files, say prog1.c,
+prog2.cxx and prog3.f, then the following Makefile may be used:
+
+################################# Makefile #################################
+myprog: prog1.o prog2.o prog3.o
+	${LINKER} ${USER_LDFLAGS} ${LDFLAGS} -o $@ $^ ${USER_LIBS} ${LIBS}
+
+include ${HOME}/phg/Makefile.inc
+############################################################################

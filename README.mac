@@ -1,0 +1,96 @@
+$Id: README.mac,v 1.20 2021/09/24 12:51:14 zlb Exp $
+
+Known bugs:
+. 20200704:
+  On macOS Catalina 10.15.15:
+  With MacPorts mpich-gcc9 (port select --set mpi mpich-gcc9-fortran),
+  poisson.c segfaults when using P3 (and P2, etc.) in phgDofInitFuncPoint.
+  Fix: compiling dof.c with "-O1" (compiler bug?).
+  Alt. fix for P3: insert 'printf("\n")' after 'int M[n]' in the EDGE case.
+
+. examples/robin.c segfaults in phgDofGetBasesOnFace, in the section
+  "The EDGE bases", if dof.c is compiled with MacPorts gcc5 5.4.0_0 and "-O2".
+
+- To configure a basic sequential working version using Apple LLVM:
+	CC=clang CXX=clang++ ./configure
+
+- RPM packages can be managed using programs from the 'rpm' package of MacPorts
+
+- Issues related to shared libraries (-rpath not working in MacOS):
+
+  . When using MPI building libphg.so with 'gcc -shared' will fail because of
+    unresolved MPI symbols. As a workaround, the default value of BUILD_SHARED
+    is set to '${CC} -shared' on MacOS.
+
+  . To list shared libraries in an executable file:
+	% otool -L poisson
+
+  . To add search paths for shared libraries:
+	% env DYLD_LIBRARY_PATH="../src:$DYLD_LIBRARY_PATH" ./poisson
+
+  . MacOS uses stored pathname to load shared libraries. To change the stored
+    pathname of a shared library, use either the program 'install_name_tool',
+    e.g.:
+	% install_name_tool -change "libphg.so" "../src/libphg.so" poisson
+    or the '-dylinker_install_name' compiler option, e.g.:
+	% clang -dynamiclib -dylinker_install_name /opt/local/lib/libXXX.dylib \
+		-o libXXXX.dylib *.o ${LIBS}
+
+- MacPorts:
+    . MacPorts requires Xcode from AppStore, and Command Line Tools from
+	  https://developer.apple.com/download/more/
+      or:
+	  https://developer.apple.com/xcode/resources/
+      (need to run "xcodebuild -license" to accept the license agreements)
+
+    . Install MUMPS first, which will install matching versions of GCC, MPI
+      and related tools (ParMETIS etc.). Then:
+	# port installed | grep 'gcc'	# find out installed GCC version
+	# port select --set gcc mp-gcc5
+	# port install mpich-gcc5
+	# port select --set mpi mpich-gcc5-fortran
+	# port install petsc +mpich
+	# port install slepc +mpich
+	# port install hypre +mpich
+
+    . Precompiled obj files are in the 'obj/macports-*' subdirectories.
+
+    . To switch to OpenMPI (for compiling refine.o and coarsen.o), e.g.:
+	# port select --set mpi openmpi-gcc5-fortran
+	# ./configure --disable-petsc --disable-shared
+      (Note that PETSc, etc, are compiled with mpich)
+
+    . Configure with packages installed through MacPorts (hypre, petsc, mumps,
+      superlu_dist, arpack, slepc, etc.):
+	env CPPFLAGS=-I/opt/local/include \
+	    LDFLAGS=-L/opt/local/lib \
+	    PETSC_DIR=/opt/local/lib/petsc \ 
+	    SLEPC_DIR=/opt/local/lib/slepc ./configure
+
+      Note:
+	. Use, e.g., gcc5 (or later) and corresponding MPI for OpenMP support:
+		# port install gcc5
+		# port select --set gcc mp-gcc5
+		# port install mpich-gcc5
+		# port select --set mpi mpich-gcc5-fortran
+
+	. Install correct variants of packages, e.g.:
+		# port install petsc +mpich +gcc5
+		# port install slepc +mpich +gcc5
+		# port install hypre +mpich +gcc5
+	  (may need to do 'port clean ...' before installing)
+
+	. superlu_dist: need also install superlu (for some header files)
+
+	  Note: the MacPorts installation of superlu_dist sets -DPRNTlevel=1
+		in make.inc, producing messages that can't be remove through
+		API.
+
+	. For convenience may add the following lines to ~/.profile
+		export CPPFLAGS=-I/opt/local/include
+		export LDFLAGS=-L/opt/local/lib
+		export PETSC_DIR=/opt/local/lib/petsc
+		export SLEPC_DIR=/opt/local/lib/slepc
+
+	. Use CFLAGS="-std=c99" if compiler complains about 'PETSC_RESTRICT'
+	  ('restrict') in PETSc's header files.

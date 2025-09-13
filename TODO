@@ -1,0 +1,54 @@
+$Id: TODO,v 1.107 2015/09/15 03:16:44 zlb Exp $
+
+- Allow importing meshes using user-defined comms:
+     1. add a member comm_world to GRID, which is used to replace the global
+	variable phgComm whenever applicable, e.g. in phgCreateComm_ (need to
+	add an extra argument 'comm_world' to it)
+     2. change phgImport to phgImport0 with an extra argument 'comm':
+	. BOOLEAN phgImport0(GRID *g, const char *filename, BOOLEAN distr,
+				MPI_Comm comm);
+	. Add an internal static variable 'comm_world' which is initialized to
+	  MPI_COMM_NULL, used to store the comm set through phgImportSetComm
+	. #define phgImport(g, fn, dist) phgImport0(g, fn, dist, MPI_COMM_NULL)
+	. #define phgImportSetComm(comm)  phgImport0(NULL, NULL, FALSE, comm)
+
+- add the mode 'PHG_ASSEMBLED' to MAT and remove the member 'assembled'
+  (add the 'mode' member to VEC?)
+
+- Use 'INT' for the counts and disps in phgAlltoallv to allow large messages
+  and remove the assertions "xxxx <= INT_MAX" in src/*.c.
+
+- Implement a function for extracting components of a multi-dimensional DOF
+
+- Add a 'type' member to DOF_TYPE to support INT-valued DOFs (do the same for
+  MAT and VEC?).
+
+- solver-ams.c: implement aux spaces for hp elements.
+
+- utils.c: allow combined boundary types in bcmap file using '|'
+
+- Reimplement caching (use separate caches for vertex/edge/face/elem bases?)
+  for speeding up numerical quadrature of h-p bases.
+
+- Periodicity support in the following functions:
+	phgSurfaceCut, phgDupGrid
+
+- Use communication instead of extrapolation for DOF interpolation
+  when one child is missing (coarsen.c).
+
+  Tests:
+  mpirun -np 1 ./hp_test -default_dof_type DG4 -pre_refines=3 -post_refines=6
+  mpirun -np 4 ./hp_test -default_dof_type DG4 -pre_refines=3 -post_refines=6
+  mpirun -np 4 ./hp_test -default_dof_type DG4 -pre_refines=3 -post_refines=6 \
+        -partitioner zoltan -zoltan_method random
+
+- Add an optional pointer to the function computing element matrix/vector to
+  MAT/VEC, and allow MAT/VEC/SOLVER to live through refinement, coarsening,
+  and redistribution.
+
+- Add codes for treating the case nvec > 0 in MAT/VEC/SOLVER.
+
+- Optimize communications: design collective communication functions which
+  only require local data lengths (use MPI_Probe to discover data lengths)
+
+- Restart file

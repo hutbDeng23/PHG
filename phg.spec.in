@@ -1,0 +1,106 @@
+# $Id: phg.spec.in,v 1.17 2021/12/09 01:54:08 zlb Exp $
+#
+
+%define ver @PHG_VERSION@
+%define rel @PHG_BUILD@
+
+Summary:	Parallel Hierarchical Grid
+Version: 	%{ver}
+Release:	%{rel}
+Name:		phg
+#Requires:	parmetis vtk-devel vtk-tcl
+#BuildRequires:	parmetis vtk-devel vtk-tcl
+#BuildRequires:	cct
+Provides:	phg
+Group:		Applications/Library
+Source:		phg-%{ver}-%{rel}.tar.bz2
+URL:		http://lsec.cc.ac.cn/phg
+Packager:	Zhang Lin-bo <zlb@lsec.cc.ac.cn>
+License:	LGPL
+BuildRoot:	/var/tmp/phg-%{ver}-root
+BuildRequires:  gmp-devel, libmatheval-devel
+# to avoid troubles with the shared libs of PETSc:
+AutoReq:	no
+Prefix:		/usr
+
+%description
+
+PHG is a library for developing parallel adaptive finite element
+applications on tetrahedral meshes.
+
+%prep
+%setup -q -n phg-%{ver}
+
+%build
+unset CFLAGS
+unset CXXFLAGS
+./configure
+make lib
+(cd phg_tcl; make all)
+(cd utils; make dof_info mirror)
+
+%install
+rm -rf $RPM_BUILD_ROOT
+make prefix=%{prefix} libdir=%{_libdir} install_root=$RPM_BUILD_ROOT \
+	install-doc install
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%post
+
+# Adjust paths after relocation (rpm --prefix=)
+
+#echo DEFAULTPREFIX=%{prefix}
+#echo INSTALLPREFIX=$RPM_INSTALL_PREFIX
+
+(
+ cd $RPM_INSTALL_PREFIX/share/phg/
+ sed -e 's|CPPFLAGS *= *-I[^ ]* |CPPFLAGS = -I'$RPM_INSTALL_PREFIX'/include |g'\
+     -e 's|LDFLAGS *= *-L[^ ]* |LDFLAGS = -L'$RPM_INSTALL_PREFIX'/lib |g' \
+	Makefile.inc >tmp
+ mv tmp Makefile.inc
+ chmod 0644 Makefile.inc
+
+ cd $RPM_INSTALL_PREFIX/share/doc/phg/examples
+ tmp=$RPM_INSTALL_PREFIX/share/phg/Makefile.inc
+ sed -e 's!^include .*$!include '$tmp'!g' Makefile >tmp
+ mv tmp Makefile
+ chmod 0644 Makefile
+
+ if test -r $RPM_INSTALL_PREFIX/share/phg/phg.tcl; then
+    cd $RPM_INSTALL_PREFIX/share/phg
+    sed -e 's|^#!.*phg_tcl|#!'$RPM_INSTALL_PREFIX'/bin/phg_tcl|g' \
+	-e 's|\".*\(phg-logo\.gif\)|"'$RPM_INSTALL_PREFIX'/share/phg/\1|g' \
+	    phg.tcl >tmp
+    mv tmp phg.tcl
+    chmod 0755 phg.tcl
+ fi
+
+ if test -r $RPM_INSTALL_PREFIX/bin/phg; then
+    cd $RPM_INSTALL_PREFIX/bin
+    sed -e 's!BIN=\".*\"!BIN="'$RPM_INSTALL_PREFIX/bin/'phg_tcl"!g' -e \
+	    's!CRIPT=\".*\"!CRIPT="'$RPM_INSTALL_PREFIX/share/phg/'phg.tcl"!g' \
+	    phg >tmp
+    mv tmp phg
+    chmod 0755 phg
+ fi
+)
+
+%files
+%defattr(-,root,root)
+%dir %{prefix}/include/phg
+%dir %{prefix}/share/phg
+%dir %{prefix}/share/doc/phg
+%{prefix}/bin/*
+%{prefix}/include/phg.h
+%{_libdir}/*
+%{prefix}/include/phg/*
+%{prefix}/share/phg/*
+%{prefix}/share/doc/phg/*
+
+%changelog
+
+* Wed Feb 23 2005 Zhang Linbo <zlb@lsec.cc.ac.cn>
+
+- created RPM package.

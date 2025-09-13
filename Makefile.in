@@ -1,0 +1,256 @@
+# $Id: Makefile.in,v 1.226 2022/07/07 06:46:46 zlb Exp $
+
+prefix		= @prefix@
+exec_prefix	= @exec_prefix@
+bindir		= @bindir@
+libdir		= @libdir@
+datadir		= @datadir@
+includedir	= @includedir@
+datarootdir	= @datarootdir@
+RPATH_FLAG	= @RPATH_FLAG@
+
+install_root =
+
+DIRS = src p4est @PHG_TCL@ utils test-petsc examples
+
+default:
+	@if test -r Makefile.private; then	\
+	    $(MAKE) -f Makefile.private;		\
+	else					\
+	    (cd src; $(MAKE));			\
+	fi
+
+# Note: 'cvs up' does not work on o3800
+cvs:
+	-@for d in `ls -lpC1 | grep '/$$' | grep -v CVS`; do \
+	  (cd $$d; \
+	   test -d CVS && echo === $$d && cvs up -A 2>&1 | grep -v Updating; \
+	   true); \
+	done
+	@echo === .
+	-@cvs up -A `ls -lpC1 | grep -v '/$$'` 2>&1 | grep -v 'cvs add'
+
+doc:
+	@(cd doc; $(MAKE) -s manual.pdf >/dev/null)
+	@(cd doc; doxygen; cd doxygen/latex; ctex refman.tex >/dev/null)
+
+src: lib
+lib:
+	@(cd src; $(MAKE) USER_CFLAGS="" USER_CPPFLAGS="" USER_CXXFLAGS="")
+
+all:
+	@for d in ${DIRS}; do			\
+	    test -d $$d || continue;		\
+	    (cd $$d; $(MAKE) all)			\
+	done
+
+CLEAN_FILES = *.bak core* output.* config.status
+clean:
+	@for d in ${DIRS} doc test; do			\
+	    test -d $$d || continue; 			\
+	    cd $$d; $(MAKE) clean; cd ..;			\
+	done
+	-/bin/rm -rf ${CLEAN_FILES}
+
+CLEAN_FILES_DIST = ${CLEAN_FILES} config*.log Makefile Makefile.inc phg.spec \
+	include/phg/config.h *.cache test-petsc/poisson \
+	examples/simplest examples/poisson doc/Doxyfile doc/doxygen \
+	#expression.c expression.inc
+distclean:
+	@for d in ${DIRS} doc test; do			\
+	    test -d $$d || continue; 			\
+	    cd $$d; $(MAKE) distclean; cd ..;		\
+	done
+	-/bin/rm -rf ${CLEAN_FILES_DIST}
+	@test -r Makefile.private && echo include Makefile.private > Makefile
+
+install:
+	@if ! echo "${prefix}" | grep -q '^/'; then \
+		echo 1>&2 "Error: prefix must be an absolute path"; false; fi
+	@echo "installing ${install_root}${libdir}/libphg@LIB_SUFFIX@"
+	@(cd src; $(MAKE) -s libphg@LIB_SUFFIX@)
+	@mkdir -p ${install_root}${libdir}
+	@/bin/rm -f ${install_root}${libdir}/libphg.a \
+		    ${install_root}${libdir}/libphg.so >/dev/null 2>&1 || true
+	@cp src/libphg@LIB_SUFFIX@ ${install_root}${libdir}/.
+	@chmod 0644 ${install_root}${libdir}/libphg@LIB_SUFFIX@
+
+	@echo "installing ${install_root}${includedir}/phg*.h"
+	@mkdir -p ${install_root}${includedir}/phg
+	-@chmod 0755 ${install_root}${includedir}/phg >/dev/null 2>&1
+	-@#/bin/rm -f ${install_root}${includedir}/phg*.h
+	@#sed -e 's/^\(# *include[ 	][ 	]*"\)/\1phg\//g' include/phg.h \
+		> ${install_root}${includedir}/phg.h
+	@cp include/phg*.h ${install_root}${includedir}/.
+	@chmod 0644 ${install_root}${includedir}/phg*.h
+
+	@echo "installing ${install_root}${includedir}/phg/*.h"
+	-@/bin/rm -f ${install_root}${includedir}/phg/*.h
+	@#(cd include; cp `grep '^# *include[ 	][ 	]*"' phg.h | sed -e 's/^.*\"\(.*\)\".*/\1/'` ${install_root}${includedir}/phg/.)
+	@cp include/phg/*.h ${install_root}${includedir}/phg/.
+	@chmod 0644 ${install_root}${includedir}/phg/*.h
+
+	@echo "installing ${install_root}${datadir}/phg/config*.log"
+	-@rm -rf ${install_root}${datadir}/phg/*
+	@mkdir -p ${install_root}${datadir}/phg
+	@cp config*.log ${install_root}${datadir}/phg/.
+	@chmod 0644 ${install_root}${datadir}/phg/config*.log
+
+	@echo "installing ${install_root}${datadir}/phg/Makefile.inc"
+	@sed -e 's|CPPFLAGS[ 	]*= *-I[^ ]*|CPPFLAGS = -I${includedir}|g' \
+	     -e 's|LDFLAGS[ 	]*= *-L[^ ]*|LDFLAGS = -L${libdir}|g' \
+	     -e 's|LIBS[ 	]*= *@RPATH_FLAG@[^ ]*|LIBS = @RPATH_FLAG@${libdir}|g' \
+		Makefile.inc > ${install_root}${datadir}/phg/Makefile.inc
+	@chmod 0644 ${install_root}${datadir}/phg/Makefile.inc
+
+	@echo "installing ${install_root}${bindir}/[nt]etgen2medit"
+	@if ! test -d ${install_root}${bindir}; then \
+	    mkdir -p ${install_root}${bindir}; \
+	    chmod 0755 ${install_root}${bindir} >/dev/null 2>&1; \
+	fi
+	@cp utils/[nt]etgen2medit ${install_root}${bindir}/.
+	@chmod 0755 ${install_root}${bindir}/[nt]etgen2medit
+
+	@#=============================================================
+	@if test "@LIB_SUFFIX@" = ".so"; then \
+	    if test -n "${install_root}" -a -n ""; then \
+		echo 1>&2 "WARNING: need to fix rpath in the executables."; \
+	    fi; \
+	    /bin/rm -f utils/dof_info utils/mirror utils/abaqus utils/grid2vtk || true; \
+	    /bin/rm -f @PHG_TCL@/phg_tcl || true; \
+	    /bin/rm -f Makefile.inc.save || true; \
+	    /bin/mv Makefile.inc Makefile.inc.save; \
+	    sed -e 's|LIBS[ 	]*= *@RPATH_FLAG@[^ ]*|LIBS = @RPATH_FLAG@${libdir}|g' Makefile.inc.save > Makefile.inc; \
+	fi
+	@for d in @PHG_TCL@ utils; do (cd $$d; $(MAKE) -s default); done
+	@if test "@LIB_SUFFIX@" = ".so"; then \
+	    /bin/rm -f Makefile.inc || true; \
+	    mv Makefile.inc.save Makefile.inc; \
+	fi
+	@#=============================================================
+
+	@echo "installing ${install_root}${bindir}/{dof_info,phg_debug,mirror,abaqus,grid2vtk,medit2vtk}"
+	@(cd utils; make -s dof_info mirror abaqus grid2vtk; strip dof_info mirror abaqus grid2vtk) >/dev/null 2>&1
+	@for f in dof_info phg_debug mirror abaqus grid2vtk medit2vtk; do \
+	    cp utils/$$f ${install_root}${bindir}/.; \
+	    chmod 0755 ${install_root}${bindir}/$$f; \
+	done
+	@echo "installing ${install_root}${bindir}/phgdoc"
+	@sed -e 's!^INCS=.*$$!INCS="'${includedir}'/phg.h '${includedir}'/phg/*.h"!g' utils/phgdoc > ${install_root}${bindir}/phgdoc
+	@chmod 0755 ${install_root}${bindir}/phgdoc
+	-@(cd ${install_root}${bindir}/; \
+		test -L phgsrc || ln -s phgdoc phgsrc || true)
+	@if test -n "@PHG_TCL@"; then \
+	    echo "installing ${install_root}${bindir}/@PHG_TCL@"; \
+	    cd phg_tcl; \
+	    cp @PHG_TCL@ @PHG_TCL@.tmp; \
+	    strip @PHG_TCL@.tmp; \
+	    cp @PHG_TCL@.tmp ${install_root}${bindir}/@PHG_TCL@; \
+	    rm @PHG_TCL@.tmp; \
+	    chmod 0755 ${install_root}${bindir}/@PHG_TCL@; \
+	    echo "installing ${install_root}${bindir}/phg"; \
+	    sed -e 's!BIN=\".*\"!BIN="'${bindir}/'@PHG_TCL@"!g' \
+		-e 's!SCRIPT=\".*\"!SCRIPT="'${datadir}/phg/'phg.tcl"!g' \
+		phg > ${install_root}${bindir}/phg; \
+	    chmod 0755 ${install_root}${bindir}/phg; \
+	    echo "installing ${install_root}${datadir}/phg/phg.tcl"; \
+	    mkdir -p ${install_root}${datadir}/phg; \
+	    chmod 0755 ${install_root}${datadir}/phg >/dev/null 2>&1; \
+	    env LANG=C sed -e 's|^#!.*phg_tcl|#!${bindir}/phg_tcl|g' phg.tcl \
+		> ${install_root}${datadir}/phg/phg.tcl; \
+	    chmod 0755 ${install_root}${datadir}/phg/phg.tcl; \
+	    echo "installing ${install_root}${datadir}/phg/phg-logo.gif";\
+	    cp phg-logo.gif ${install_root}${datadir}/phg/.; \
+	    chmod 0644 ${install_root}${datadir}/phg/phg-logo.gif; \
+	    cd ..; \
+	fi
+
+install-doc:
+	@if ! echo "${prefix}" | grep -q '^/'; then \
+		echo 1>&2 "Error: prefix must be an absolute path"; false; fi
+	@echo "installing in ${install_root}${datadir}/doc/phg"
+	-@rm -rf ${install_root}${datadir}/doc/phg/*
+	@mkdir -p ${install_root}${datadir}/doc/phg/examples
+	@cp README BUGS Changelog NEWS INSTALL AUTHORS COPYING TODO \
+		${install_root}${datadir}/doc/phg/.
+
+	@echo "default: poisson simplest heat non-smooth eigen maxwell" \
+		"maxwell-complex maxwell-eigen elastic" \
+		> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "all: default" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+
+	@echo "clean:" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "	/bin/rm -f *.o poisson simplest heat non-smooth eigen maxwell" \
+                "maxwell-complex maxwell-eigen elastic" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+
+	@echo "poisson: poisson.o functions.h" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "simplest: simplest.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "heat: heat.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "non-smooth: non-smooth.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "eigen: eigen.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "maxwell: maxwell.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "maxwell-complex: maxwell-complex.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "maxwell-eigen: maxwell-eigen.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "elastic: elastic.o" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+
+	@echo "" >> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@echo "include ${datadir}/phg/Makefile.inc" \
+		>> ${install_root}${datadir}/doc/phg/examples/Makefile
+	@for f in simplest.c poisson.c heat.c non-smooth.c eigen.c elastic.c \
+		maxwell.c maxwell-complex.c maxwell-eigen.c functions.h \
+		navier-stokes.c navier-stokes.h robin.c \
+		ipdg.c interface.c; do \
+	    sed -e 's/fn = \".*\/\([^/]*\)\"/fn\ = "\1"/' examples/$$f \
+		>${install_root}${datadir}/doc/phg/examples/$$f; \
+	done
+	@# Note: collect filenames from the "fn = "../" lines
+	@cp -f test/tetra.dat ${install_root}${datadir}/doc/phg/examples/.
+	@for g in `cd examples; echo *.[ch]`; do \
+	    for f in `grep 'fn *= *\"\.\.\/' examples/$$g | grep -v '//\|/\*' \
+		   | sed -e 's/^.* *= *\"\.\.\///' -e 's/\";//' | sort -u`; do \
+		if ! test -r $$f; then \
+		    echo 1>&2 "Warning: file \"$$f\" needed by \"$$g\"" \
+				"is missing."; \
+		    continue; \
+		fi; \
+		cp -f $$f ${install_root}${datadir}/doc/phg/examples/.; \
+	    done; \
+	done
+	-@chmod -R a+rX ${install_root}${datadir}/doc/phg >/dev/null 2>&1
+	@# The following commands depend on the installation of TeX/CCT
+	@if (cd doc; $(MAKE) -s manual.pdf >/dev/null 2>&1); then \
+	    cp doc/manual.pdf ${install_root}${datadir}/doc/phg/.; \
+	    chmod a+rX ${install_root}${datadir}/doc/phg/manual.pdf; \
+	else \
+	    true; \
+	fi
+
+depend: dep
+dep:
+	@sh utils/makedeps
+
+zips:
+	@$(MAKE) -f Makefile.private $@
+unzips:
+	@$(MAKE) -f Makefile.private $@
+
+dist:
+	@sh make-dist.sh
+
+full-dist:
+	@sh make-dist.sh full
+
+.PHONY: ${DIRS} dirs default all clean distclean install doc unzips zips dist \
+	dep depened full-dist

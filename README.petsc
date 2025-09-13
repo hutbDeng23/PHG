@@ -1,0 +1,17 @@
+0. If '-petsc_pc_opts' is provided then the PC in PETSc is set to a shell
+   PC which calls PHG's solver specified by the argument.
+
+1. '-oem_options "-pc_type ..."' takes precedence over '-petsc_pc_opts'
+   (PC*Set* functions will be neutralized by '-oem_options "-pc_type ..."')
+
+2. To use the additive Schwarz PC with sub-problems solved by MUMPS
+   (MUMPS must be enabled in PETSc):
+
+	-solver petsc
+	-oem_options "-ksp_type gmres -pc_type asm"
+	-oem_options "-pc_asm_overlap 4"
+	-oem_options "-sub_ksp_type preonly -sub_pc_type lu"
+	-oem_options "-sub_pc_factor_mat_solver_package mumps"
+	# MUMPS options
+	-oem_options "-mat_mumps_sym 2"		# 0, 1, 2: unsym, spd, sym
+	-oem_options "-mat_mumps_icntl_4 0"	# 0, 1, 2, 3, 4: print_level

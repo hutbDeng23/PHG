@@ -1,0 +1,83 @@
+#!/bin/bash
+#
+# Script converting an IGES/STEP file, a NETGEN .geo file, or a neutral file
+# into an Medit .mesh file.
+#
+# $Id: netgen2medit,v 1.13 2019/07/12 06:13:01 zlb Exp $
+
+option="-moderate"
+if [ $# -eq 2 ]; then
+    option="$1"
+    shift
+fi
+
+if [ $# -ne 1 ]; then
+    echo 1>&2 ""
+    echo 1>&2 "This script converts IGES/STEP, Netgen .geo or neutral file" \
+		"to Medit mesh file,"
+    echo 1>&2 "(which can then be imported into PHG)"
+    echo 1>&2 ""
+    echo 1>&2 "Usage:"
+    echo 1>&2 "    $0 [option] input_file [>output_file.mesh]"
+    echo 1>&2 ""
+    echo 1>&2 "Option:"
+    echo 1>&2 "    -verycoarse, -coarse, -moderate (default), -fine," \
+		"or -veryfine"
+    echo 1>&2 ""
+    echo 1>&2 "The input file may be in IGES/STEP/.geo or neutral format."
+    echo 1>&2 ""
+    exit 1
+fi
+
+#
+# Note: it is assumed that the neutral file starts with a number on a line.
+if grep -q "^[	 ]*[1-9][0-9]*[	 ]*$" $1 2>/dev/null; then
+    input=$1
+else
+    input=/tmp/`basename $1`.tmp.$$
+    ###trap "/bin/rm -f $input ng.ini test.out" 0 1 2 3 15
+    trap "/bin/rm -f $input" 0 1 2 3 15
+    # -verycoarse, -coarse, -moderate, -fine, -veryfine
+    success=false
+    for cmd in ng netgen-mesher
+    do
+	echo 1>&2 "****************************** trying '$cmd' ..."
+	if $cmd -batchmode -meshfiletype="Neutral Format" $option \
+		-geofile=$1 -meshfile=$input 1>&2; then
+	    success=true
+	    break
+	fi
+    done
+    $success || exit 1
+fi
+
+# Convert to Medit mesh file format
+cat $input | awk '
+    BEGIN {i = 0; n = 0}
+    END {print "\nEnd"}
+    {
+	if (n == 0) {
+	    i = i + 1;
+	    if (i == 1) {
+		n = $1
+		print "MeshVersionFormatted 1"
+		print "\nDimension\n3"
+		printf "\nVertices\n%s\n", n
+	    } else if (i == 2) {
+		n = $1
+		printf "\nTetrahedra\n%s\n", n
+	    } else if (i == 3) {
+		n = $1
+		printf "\nTriangles\n%s\n", n
+	    } else {
+		print "End"
+		exit
+	    }
+	} else {
+	    if (i == 1) printf "%s %s %s 0\n", $1, $2, $3
+	    else if (i == 2) printf "%s %s %s %s %d\n", $2, $3, $4, $5, $1 - 1
+	    else printf "%s %s %s %s\n", $2, $3, $4, $1
+	    n = n - 1
+	}
+    }
+'

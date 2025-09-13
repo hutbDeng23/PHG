@@ -1,0 +1,161 @@
+#!/bin/bash
+#
+# This script reads an input Medit file and writes an output VTK file. Only
+# the Triangle, Quadrilateral, Tetrahedron and Hexahedron elements are
+# included, the 1D (Edge) elements are ignored.
+#
+# The reference numbers (the last number following vertex indices of each
+# element) are written as the CELL_DATA 'region_mark':
+#     .	The reference numbers of tetrahedra and hexahedra are output as is,
+#     . The reference numbers of triangles and quadrilaterals are converted
+#	to negative numbers, with the mapping: x -> -1-x
+#
+# $Id: medit2vtk,v 1.8 2022/06/21 06:32:15 zlb Exp $
+
+if test $# -ne 1; then
+    echo 1>&2 "Usage: $0 medit_file [>vtk_file]"
+    exit 1
+fi
+
+if ! test -r "$1"; then
+    echo 1>&2 "Error: cannot read file \"$1\"."
+    exit 1
+fi
+
+infile="$1"
+if test "${infile%.bz2}" != "$infile"; then
+    readfile="bzip2 -dc \"$infile\""
+elif test "${infile%.gz}" != "$infile"; then
+    readfile="gzip -dc \"$infile\""
+else
+    readfile="cat \"$infile\""
+fi
+
+# remove comments and leading spaces
+readfile="eval $readfile | dos2unix | sed -e 's/#.*//g' -e 's/^ *//'"
+
+# First, get number of vertices (nvert), total number of cells (ncell) and
+# cell data size (csize), and list of cell types (elem[]) and counts (count[]).
+set -- `$readfile | awk 'BEGIN {flag = 0} {
+    if (flag) {print $1; flag = 0; next}
+    w = toupper(substr($1, 1, 1)) tolower(substr($1, 2))
+    if (w == "Vertices" || w == "Dimension" ||
+	w == "Triangles" || w == "Quadrilaterals" ||
+	w == "Tetrahedra" || w == "Hexahedra") {
+	if (NF >= 2) print w, $2; else {print w; flag = 1}
+    }
+}'`
+
+nvert=0
+ncell=0
+csize=0
+ne=0	# size of elem[] and count[]
+while true; do
+    test $# -gt 1 || break
+    echo 1>&2 "$1: $2"
+    case $1 in
+	Dimension)	test $2 -ne 3 &&
+			echo 1>&2 "Error: invalid dimension, abort." &&
+			exit 1 ;;
+	Vertices)	nvert=$2 ;;
+	Triangles)	ncell=$((ncell + $2)); csize=$((csize + 4 * $2));
+			elem[$ne]="5"; count[$ne]=$2; ne=$((ne+1)) ;;
+	Quadrilaterals)	ncell=$((ncell + $2)); csize=$((csize + 5 * $2));
+			elem[$ne]="9"; count[$ne]=$2; ne=$((ne+1)) ;;
+	Tetrahedra)	ncell=$((ncell + $2)); csize=$((csize + 5 * $2));
+			elem[$ne]="10"; count[$ne]=$2; ne=$((ne+1)) ;;
+	Hexahedra)	ncell=$((ncell + $2)); csize=$((csize + 9 * $2));
+			elem[$ne]="12"; count[$ne]=$2; ne=$((ne+1)) ;;
+    esac
+    shift 2
+done
+
+# Process vertices
+cat <<END
+# vtk DataFile Version 2.0
+Medit mesh "$infile"
+ASCII
+DATASET UNSTRUCTURED_GRID
+
+POINTS $nvert float
+END
+
+tmpfile="/tmp/medit-$$.tmpfile"
+/bin/rm -f "$tmpfile"
+trap "/bin/rm -f $tmpfile" 0 1 2 3 15
+
+$readfile | awk '
+BEGIN {n = 0; m = 0; k = 0; dim = 0; i = 0; tmp = ""}
+{
+    nf = split($0, fields)
+    for (ii = 1; ii <= nf; ii++) {
+	w = tolower(fields[ii])
+	if (n < 0) {n = w; continue}
+	if (n > 0 && m > 0) {
+	    # writing data (total count: n * m)
+	    if (k > 0 && i < m-1) w--	# convert index to 0-based
+	    if (i == 0) {
+		if (k > 0) {
+		    printf "%s %s", k, w
+		    i++
+		} else {
+		    printf "%s", w
+		}
+	    } else {
+		if (i < m-1) printf " %s", w	# skip last number
+		else if (dim > 0) {
+		    if (dim == 2) w = -1 - w
+		    if (tmp == "") {tmp = w} else {tmp = tmp " " w}
+		    if (length(tmp) > 70) {
+			printf "%s\n", tmp >>"'$tmpfile'"
+			tmp = ""
+		    }
+		}
+	    }
+	    if (++i >= m) {
+		printf "\n"
+		n--
+		i=0
+		if (n == 0 && k == 0) printf "\nCELLS "'$ncell'" '$csize'\n"
+	    }
+	    continue
+	}
+	if (w == "vertices") {n=-1; m=4; k=0; dim=0; i=0; continue}
+	if (w == "triangles") {n=-1; m=5; k=3; dim=2; i=0; continue}
+	if (w == "quadrilaterals") {n=-1; m=6; dim=2; k=4; i=0; continue}
+	if (w == "tetrahedra") {n=-1; m=6; k=4; dim=3; i=0; continue}
+	if (w == "hexahedra") {n=-1; m=10; k=8; dim=3; i=0; continue}
+    }
+}
+END {if (tmp != "") printf "%s\n", tmp >>"'$tmpfile'"}
+'
+
+echo ""
+echo "CELL_TYPES $ncell"
+n=0
+for ((i = 0; i < ne; i++)); do
+    for ((j = 0; j < ${count[$i]}; j++)); do
+	if test $n -eq 0 ; then
+	    echo -n "${elem[$i]}"
+	else
+	    echo -n " ${elem[$i]}"
+	fi
+	n=$((n+1))
+	if test $n -eq 25; then
+	    n=0
+	    echo ""
+	fi
+    done
+done
+test $n -ne 0 && echo ""
+
+# write region_mark
+cat <<END
+
+CELL_DATA $ncell
+SCALARS region_mark int
+LOOKUP_TABLE default
+END
+cat "$tmpfile"
+
+/bin/rm -f "$tmpfile"

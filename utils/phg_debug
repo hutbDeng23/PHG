@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# This script executes PHG programs under gdb
+#
+# $Id: phg_debug,v 1.19 2010/04/20 05:42:15 zlb Exp $
+#
+# the next line restarts using expect and with $DISPLAY as 1st argument \
+exec env PHG_OPTIONS="$PHG_OPTIONS -pause" /usr/bin/expect "$0" "$DISPLAY" "$@"
+
+set display	[lindex $argv 0]
+set argv	[lrange $argv 1 end]
+set env(DISPLAY) $display
+
+#!/usr/bin/expect -f
+
+if {[llength $argv] < 2} {
+    puts "Usage: phg_debug nprocs prog \[arguments\]"
+    exit
+}
+
+set pwd		[exec pwd]
+set nprocs	[lindex $argv 0]
+set prog	[lindex $argv 1]
+set args	[lrange $argv 2 end]
+
+set force_conservative 0  ;# set to 1 to force conservative mode even if
+			  ;# script wasn't run conservatively originally
+if {$force_conservative} {
+    set send_slow {1 .1}
+    proc send {ignore arg} {
+	sleep .1
+	exp_send -s -- $arg
+    }
+}
+
+set timeout -1
+
+#
+# Note:
+#    1. $args is passed as a single argument to $prog, which causes problems
+#	with multiple options or options with arguments.
+#
+#	The workaround consists of running the command through 'sh -c'
+#
+#    2. The quoted cmdline strings are converted to sublists surrounded
+#	with '{...}' by expect, we then convert them to single quotes.
+#
+#----------- working, but don't allow quoted arguments
+###spawn sh -c "mpirun -np $nprocs $prog $args"
+#----------- not working (why?)
+###spawn sh -c "`echo mpirun -np $nprocs $prog $args | \
+###		sed -e 's/\[{}\]/\\x22/g'`"
+#----------- hacky
+set pid [pid]
+spawn sh -c "trap \"rm -f phg_debug-tmp.$pid\" 0 1 2 3 15; \
+	     echo mpirun -np $nprocs $prog $args | \
+		sed -e 's/\[{}\]/\\x22/g' > phg_debug-tmp.$pid; \
+	     sh phg_debug-tmp.$pid"
+#-----------
+set id $spawn_id
+expect {
+    -re "  (proc \[0-9\]*( \\(\[^, \]*\\))*, pid = \[0-9\]*)\r" {
+	set str $expect_out(1,string)
+	# Note: $expect_out(1,string) may be one of the following forms:
+	#	1) ##### Got: proc 0, pid = 19509 #####
+	#	2) ##### Got: proc 0 (zlb.cc.ac.cn), pid = 19509 #####
+	regsub "proc \[0-9\]*( \\((\[^, \]*)\\))*, .*" $str "\\2" node
+	if {$node == ""} {
+	    set node "localhost"
+	}
+	regsub "proc (\[0-9\]*).*" $str "\\1" rank
+	regsub ".*, pid = (\[0-9\]*)" $str "\\1" pid
+	####puts "##### node=\"$node\", rank=\"$rank\", pid=\"$pid\""
+	#----------------------- GDB under xterm
+	if {$node == "localhost" ||
+	    $node == "[exec hostname]" ||
+	    $node == "[exec hostname -s]"} {
+	    puts "##### launching gdb on local host, at display $env(DISPLAY)"
+	    set shell "sh"
+	    set host "-c"
+	} else {
+	    puts "##### launching gdb on $node, at display $env(DISPLAY)"
+	    set shell "ssh"
+	    set host $node
+	}
+	set parms(shell$rank) "$shell"
+	set parms(host$rank) "$host"
+	set parms(pid$rank) "$pid"
+	exec $shell $host "echo continue > /tmp/phg_debug.$pid\; cd $pwd\; \
+			   env LANG=C xterm -title 'Process $rank' \
+				-fn 8x16 -fg black -bg lightgray \
+				-e gdb -x /tmp/phg_debug.$pid $prog $pid" &
+	exp_continue
+	#----------------------- DDD
+###	exec $shell $host "echo continue > /tmp/phg_debug.$pid\; \
+###			cd $pwd\; \
+###			env LANG=C ddd -x /tmp/phg_debug.$pid $prog $pid\; \
+###			/bin/rm -f /tmp/phg_debug.$pid" &
+###	exp_continue
+    }
+
+    "<<< Press enter to continue >>>\r" {sleep 1; send -- "\r"}
+}
+
+# go into interact mode
+interact -output $id
+
+# clean up
+for {set rank 0} {$rank < $nprocs} {incr rank} {
+    exec $parms(shell$rank) $parms(host$rank) " \
+	/bin/rm -f /tmp/phg_debug.$parms(pid$rank)\; \
+	kill `ps -ef | grep xterm | grep /tmp/phg_debug.$parms(pid$rank) \
+		| grep -v 'echo continue' | grep -v grep | awk '{print \$2}'`"
+}

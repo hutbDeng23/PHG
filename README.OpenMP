@@ -1,0 +1,21 @@
+Commands for running multi-threaded jobs on LSSC3:
+
+    Interactive job:
+	env OMP_NUM_THREADS=2 mpirun -np 64 -n 16 -x "./poisson"
+
+    Batch job:
+	env OMP_NUM_THREADS=2 bsub -np 64 -n 16 -x "mpijob ./poisson"
+    or
+	bsub -np 64 -n 16 -x "env OMP_NUM_THREADS=2 mpijob ./poisson"
+
+WARNING:
+
+1. The present implementation of OpenMP support in PHG assumes that
+a single assignment operation of type pointer or INT is atomic.
+Otherwise race conditions may occur in multi-threaded mode.
+
+Look at the use of some '#pragma omp critical' for why this
+requirement is needed.
+
+2. The functions malloc, calloc, realloc and free seem to be thread-unsafe
+when using MVAPICH2.

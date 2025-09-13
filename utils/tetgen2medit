@@ -1,0 +1,107 @@
+#!/bin/bash
+#
+# This script merges data from the .node, .ele, and .face files created
+# by tetgen into a Medit file. Only lines with a nonzero marker in the .face
+# file are written to the output.
+#
+# Note: the .mesh file created by the '-g' flag of tetgen does not contain
+#	the boundary markers.
+#
+# $Id: tetgen2medit,v 1.6 2008/08/05 12:46:56 zlb Exp $
+
+if [ $# -lt 1 ]; then
+    echo 1>&2 "This script creates an Medit mesh file from an input .poly file."
+    echo 1>&2 "Usage: $0 inputfile [tetgen options] [>output.mesh]"
+    echo 1>&2 "(may use \"-\" in place of inputfile for stdin)"
+    exit 0
+fi
+
+input="$1"
+shift
+[ "$input" = "-" ] && input=""
+
+tmpfile=tetgen-tmp$$
+cat "$input" >${tmpfile}.poly
+trap "/bin/rm -f ${tmpfile}.*" 0 1 2 3 15
+
+tetgen -pqAQ "$@" ${tmpfile}.poly 1>&2 || exit 1
+
+echo 1>&2 "The output mesh contains:"
+
+# Process .node file
+awk '
+    BEGIN {num_nodes = -1}
+    /^[^#]/ {
+	if (num_nodes < 0) {
+	    num_nodes = $1	# number of nodes
+	    if ($2 != 3) {
+		printf "Error!"
+		exit(1)
+	    }
+	    have_attr = $3	# whether have attributes
+	    have_bdry = $4	# whether have boundary marker
+	    print "MeshVersionFormatted 1\n\nDimension\n3\n"
+	    printf "Vertices %s\n", num_nodes
+	    printf " %8d vertices\n", num_nodes > "/dev/stderr"
+	}
+	else {
+	    if (have_bdry)
+		print $2, $3, $4, $5
+	    else
+		print $2, $3, $4, "0"
+	}
+    }
+' ${tmpfile}.1.node || exit 1
+
+# Process .ele file
+awk '
+    BEGIN {num_elems = -1}
+    /^[^#]/ {
+	if (num_elems < 0) {
+	    num_elems = $1	# number of elements
+	    if ($2 != 4) {	# nodes per element (4 or 10)
+		printf "Error!"
+		exit(1)
+	    }
+	    have_attr = $3	# whether have attributes
+	    printf "\nTetrahedra %s\n", num_elems
+	    printf " %8d elements\n", num_elems > "/dev/stderr"
+	}
+	else {
+	    if (have_attr) {
+		print $2, $3, $4, $5, $6
+	    } else {
+		print $2, $3, $4, $5, "0"
+	    }
+	}
+    }
+' ${tmpfile}.1.ele || exit 1
+
+# Process .face file
+awk '
+    BEGIN {num_faces = -1}
+    /^[^#]/ {
+	if (num_faces < 0) {
+	    num_faces = $1	# number of elements
+	    if ($2 == 0) {
+		# no boundary markers, skip .face file
+		exit(0)
+	    }
+	}
+	else {
+	    # Note: only output facets with nonzero markers
+	    if ($5 != 0) print $2, $3, $4, $5
+	}
+    }
+' ${tmpfile}.1.face >${tmpfile}.1.face0 || exit 1
+
+echo ""
+echo "Triangles `cat ${tmpfile}.1.face0 | wc -l`"
+cat ${tmpfile}.1.face0
+cat ${tmpfile}.1.face0 | wc -l | awk \
+	'{printf " %8d triangles with boundary markers\n", $1 > "/dev/stderr"}'
+
+echo ""
+echo "End"
+
+echo 1>&2 "Done."

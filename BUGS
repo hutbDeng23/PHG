@@ -1,0 +1,25 @@
+$Id: BUGS,v 1.48 2010/06/24 07:40:40 zlb Exp $
+
+. 2010/04/26: Team7 crashes or gives wrong results for HC1 when np > 1.
+
+. 2009/05/07: "mpirun -np 2 eigen -eigen_solver jdbsym" is broken on i386
+  (only) when using MKL (works fine on x86_64)
+
+. eigen.c with cube.dat/pre_refines=8/nev=100/eigen_rtol=1e-6/BLOPEX solver
+  returns 2 wrong eigenvalues smaller than 3\pi^2 on x86_64
+
+. METIS/ParMETIS segfaults with netgen-files/matrix.mesh.bz2!
+
+	mpirun -np 2 phg_test netgen-files/matrix.mesh.bz2 0 0
+
+. refine_path() produces hanging faces for the following cases:
+
+	mpirun -np 2 coarsen_test ../netgen-files/circle_on_cube.mesh.bz2 \
+		-refines1=16
+	(= repeated BalanceGrid(g, 1.0, 0) + RefineRandom(%25))
+
+	mpirun -np 8 phg_test netgen-files/circle_on_cube.mesh.bz2 0 2
+
+	mpirun -np 8 phg_test netgen-files/manyholes.mesh.bz2 0 4
+
+	mpirun -np 32 phg_test netgen-files/manyholes.mesh.bz2 0 3
