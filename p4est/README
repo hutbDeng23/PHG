@@ -1,0 +1,21 @@
+$Id: README,v 1.7 2022/06/14 10:04:18 zlb Exp $
+
+The files in this directory implement the PHG-to-p4est wrapper, which allows
+a same PHG program to work with both conforming adaptive tetrahedral meshes
+and non-conforming adaptive hexahedral meshes.
+
+For examples on using this wrapper, go to the directory ../examples and try:
+	make clean
+	make USER_CFLAGS=-DPHG_TO_P4EST ipdg		# 1st example
+	make USER_CFLAGS=-DPHG_TO_P4EST interface	# 2nd example
+
+Note:
+ 1. The wrapper is enabled by defining the macro "PHG_TO_P4EST".
+    The macro PHG_TO_P4EST is used in user programs to determine whether
+    tetrahedral meshes or hexahedral meshes are being used.
+
+ 2. Programs which intend to use this wrapper can only call a subset of the
+    PHG functions for managing GRIDs and DOFs. If an unsupported function is
+    called, compiler errors or runtime errors would occur.
+
+ 3. Only DG type finite elements and cuboid elements are currently supported.

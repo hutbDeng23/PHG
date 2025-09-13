@@ -1,0 +1,25 @@
+#!/bin/bash
+# $Id: phg,v 1.13 2014/12/27 07:27:52 zlb Exp $
+
+BIN="phg_tcl"
+SCRIPT="phg.tcl"
+nprocs=""
+if test "$1" = "-np"; then
+    nprocs="$2"
+    shift 2
+fi
+
+DATA="$1"
+shift 1
+
+BINDIR="`dirname $0`"
+test -n "$BIN"  -a "${BIN#/}" = "$BIN" && BIN="$BINDIR/$BIN"
+test -n "$SCRIPT"  -a "${SCRIPT#/}" = "$SCRIPT" && SCRIPT="$BINDIR/$SCRIPT"
+
+if ! test -x $BIN -a -r $SCRIPT; then
+    echo 1>&2 "\"$BIN\" or \"$SCRIPT\" not found, abort."
+    exit 1
+fi
+
+mpdboot >/dev/null 2>&1
+$BIN -oem_options "$SCRIPT $DATA" "$@"

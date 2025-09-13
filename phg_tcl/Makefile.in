@@ -1,0 +1,38 @@
+# $Id: Makefile.in,v 1.15 2014/12/17 09:18:32 zlb Exp $
+
+.SUFFIXES: .cxx
+
+default: lib @PHG_TCL@
+all: lib @PHG_TCL@
+
+clean:
+	-/bin/rm -rf *.o *.bak core* output.* vtkPhgDataTCL*.cxx \
+		CMake* cmake.* cmakeA_* *.vtk vtkPhgDataTCLInit.data
+
+distclean: clean
+	-/bin/rm -rf phg_tcl Makefile
+
+lib:
+	@(cd ../src; $(MAKE))
+
+include ../Makefile.inc
+include Makefile.dep
+
+phg_tcl: ../src/libphg@LIB_SUFFIX@ @VTK_OBJS@ phg_tcl.o
+	${CXX} ${LDFLAGS} -o $@ phg_tcl.o @VTK_OBJS@ @VTK_LIBS@ @TCLTK_LIBS@ ${LIBS}
+
+vtkPhgDataTCLInit.o: vtkPhgData.h ../include/phg/config.h ../include/phg.h
+	echo "vtkPhgDataTCL" >vtkPhgDataTCLInit.data
+	echo 'vtkPhgData' >>vtkPhgDataTCLInit.data
+	vtkWrapTclInit vtkPhgDataTCLInit.data vtkPhgDataTCLInit.cxx
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} -c vtkPhgDataTCLInit.cxx
+
+vtkPhgDataTCLWrapper.o: vtkPhgData.h ../include/phg/config.h ../include/phg.h
+	vtkWrapTcl vtkPhgData.h 1 vtkPhgDataTCLWrapper.cxx 2>/dev/null || \
+	vtkWrapTcl vtkPhgData.h -o vtkPhgDataTCLWrapper.cxx
+	${CXX} ${CXXFLAGS} ${CPPFLAGS} -c vtkPhgDataTCLWrapper.cxx
+
+CFLAGS := ${CFLAGS} ${BUILD_CPPFLAGS}
+CXXFLAGS := ${CXXFLAGS} ${BUILD_CPPFLAGS}
+
+.PHONY: default all clean distclean install lib
